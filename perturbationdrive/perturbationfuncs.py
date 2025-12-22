@@ -1,6 +1,8 @@
+import copy 
 import numpy as np
 import cv2
 from io import BytesIO
+from typing import Optional, Tuple
 from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
 from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.config import cfg
 from .kernels.kernels import (
@@ -1234,6 +1236,99 @@ def static_rain_filter(scale, image, rain_overlay):
     image = np.clip(image, 0, 255).astype(np.uint8)
     return image
 
+
+def new_rain_filter(scale, image):
+    """
+    Generate procedural raindrops on the input image using the raindrops_generator.
+
+    Interface: func(intensity, image) -> image
+
+    Parameters:
+        - scale (int): Severity in [0..4]. Controls drop count and radius.
+        - image (numpy array): Input image (H, W, 3) uint8.
+
+    Returns: numpy array with rendered raindrops.
+    """
+    if not (0 <= scale <= 4):
+        raise ValueError("Scale must be within [0, 4].")
+
+    h, w = image.shape[:2]
+
+    # Derive a local config from the base cfg without mutating the global one
+    local_cfg = copy.deepcopy(cfg)
+
+    # Severity schedules: increase number and size of drops with scale
+    # Scales chosen to be subtle at low levels and heavy at high levels
+    drop_scales = [0.4, 0.7, 1.0, 1.3, 1.7]
+    radius_scales = [0.6, 0.8, 1.0, 1.2, 1.35]
+    edge_darkratio = [0.85, 0.75, 0.65, 0.6, 0.55][scale]  # darker edges with severity
+
+    # Apply schedules to min/max values with sane lower/upper bounds
+    local_cfg["minDrops"] = max(5, int(round(local_cfg["minDrops"] * drop_scales[scale])))
+    local_cfg["maxDrops"] = max(local_cfg["minDrops"] + 1, int(round(local_cfg["maxDrops"] * drop_scales[scale])))
+
+    local_cfg["minR"] = max(6, int(round(local_cfg["minR"] * radius_scales[scale])))
+    local_cfg["maxR"] = max(local_cfg["minR"] + 1, int(round(local_cfg["maxR"] * radius_scales[scale])))
+
+    local_cfg["edge_darkratio"] = float(edge_darkratio)
+    # No label output needed here
+    local_cfg["return_label"] = False
+
+    # Generate drops and render them onto the image
+    drops, _, _ = generate_label(h, w, local_cfg)
+    output = generateDrops(image, local_cfg, drops)
+
+    return np.asarray(output, dtype=np.uint8)
+
+
+def new_dynamic_rain_filter(scale, image):
+    """
+    Generate dynamic (frame-varying) raindrops using the raindrops_generator.
+
+    Each call creates a fresh set of drops, optionally with motion streaks to
+    simulate movement. Interface: func(intensity, image) -> image.
+
+    Parameters:
+        - scale (int): Severity in [0..4]. Controls count/size and streak length.
+        - image (numpy array): Input image (H, W, 3) uint8.
+
+    Returns: numpy array with rendered dynamic raindrops.
+    """
+    if not (0 <= scale <= 4):
+        raise ValueError("Scale must be within [0, 4].")
+
+    h, w = image.shape[:2]
+
+    local_cfg = copy.deepcopy(cfg)
+
+    # Dynamic severity schedules
+    drop_scales = [0.5, 0.8, 1.1, 1.5, 2.0]
+    radius_scales = [0.55, 0.8, 1.0, 1.2, 1.35]
+    edge_darkratio = [0.85, 0.75, 0.65, 0.6, 0.55][scale]
+    streak_lengths = [0, 2, 4, 6, 8]  # motion blur length per drop
+
+    local_cfg["minDrops"] = max(8, int(round(local_cfg["minDrops"] * drop_scales[scale])))
+    local_cfg["maxDrops"] = max(local_cfg["minDrops"] + 2, int(round(local_cfg["maxDrops"] * drop_scales[scale])))
+    local_cfg["minR"] = max(6, int(round(local_cfg["minR"] * radius_scales[scale])))
+    local_cfg["maxR"] = max(local_cfg["minR"] + 1, int(round(local_cfg["maxR"] * radius_scales[scale])))
+    local_cfg["edge_darkratio"] = float(edge_darkratio)
+    local_cfg["return_label"] = False
+
+    # Create drops for this frame
+    drops, _, _ = generate_label(h, w, local_cfg)
+
+    # Add per-drop motion parameter for generateDrops to render simple streaks
+    ml = streak_lengths[scale]
+    if ml > 0:
+        for d in drops:
+            try:
+                setattr(d, "motion_length", int(ml))
+            except Exception:
+                pass
+
+    output = generateDrops(image, local_cfg, drops)
+    return np.asarray(output, dtype=np.uint8)
+
 # check maps
 
 def object_overlay(scale, img1):
@@ -1645,3 +1740,172 @@ def shift_color(image, source_color, target_color):
         shifted_image = shifted_bgr
 
     return shifted_image
+
+
+def _lidar_severity_value(scale: int, schedule: Tuple[float, ...]) -> float:
+    if not 0 <= scale < len(schedule):
+        raise ValueError("Scale must be within [0, 4].")
+    return schedule[scale]
+
+
+def _ensure_generator(rng: Optional[np.random.Generator]) -> np.random.Generator:
+    if rng is None:
+        return np.random.default_rng()
+    return rng
+
+
+def lidar_point_dropout(
+    scale: int,
+    point_cloud: np.ndarray,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """
+    Randomly removes a percentage of points from the LiDAR point cloud to mimic occlusions.
+
+    Parameters:
+        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
+        - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
+
+    Returns: numpy array: Point cloud with points dropped according to severity.
+    """
+    pc = np.asarray(point_cloud)
+    if pc.size == 0:
+        return pc.copy()
+
+    drop_rate = _lidar_severity_value(scale, (0.05, 0.1, 0.2, 0.35, 0.5))
+    generator = _ensure_generator(rng)
+
+    keep_mask = generator.random(pc.shape[0]) > drop_rate
+    if not keep_mask.any():
+        keep_mask[generator.integers(0, pc.shape[0])] = True
+
+    return pc[keep_mask].copy()
+
+
+def lidar_inject_ghost_points(
+    scale: int,
+    point_cloud: np.ndarray,
+    bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """
+    Adds ghost points to the LiDAR point cloud to simulate multi-path reflections.
+
+    Parameters:
+        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
+        - bounds tuple: Optional explicit (min, max) bounds for ghost placement.
+        - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
+
+    Returns: numpy array: Point cloud augmented with ghost points.
+    """
+    pc = np.asarray(point_cloud)
+    if pc.size == 0:
+        return pc.copy()
+
+    generator = _ensure_generator(rng)
+    ghost_ratio = _lidar_severity_value(scale, (0.02, 0.05, 0.1, 0.18, 0.26))
+    num_ghosts = max(1, int(np.ceil(pc.shape[0] * ghost_ratio)))
+
+    position_dims = min(3, pc.shape[1])
+
+    if bounds is None:
+        mins = pc[:, :position_dims].min(axis=0)
+        maxs = pc[:, :position_dims].max(axis=0)
+    else:
+        mins = np.asarray(bounds[0])[:position_dims]
+        maxs = np.asarray(bounds[1])[:position_dims]
+
+    ghost_positions = generator.uniform(mins, maxs, size=(num_ghosts, position_dims))
+
+    residual_dims = pc.shape[1] - position_dims
+    if residual_dims > 0:
+        max_intensity = _lidar_severity_value(scale, (0.3, 0.35, 0.4, 0.45, 0.5))
+        ghost_rest = generator.uniform(0.0, max_intensity, size=(num_ghosts, residual_dims))
+        ghosts = np.concatenate((ghost_positions, ghost_rest), axis=1)
+    else:
+        ghosts = ghost_positions
+
+    return np.vstack((pc, ghosts.astype(pc.dtype))).copy()
+
+
+def lidar_reduce_reflectivity(scale: int, point_cloud: np.ndarray) -> np.ndarray:
+    """
+    Lowers the intensity channels to mimic low-reflectivity surfaces.
+
+    Parameters:
+        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
+
+    Returns: numpy array: Point cloud with reduced intensity values.
+    """
+    pc = np.asarray(point_cloud)
+    if pc.size == 0:
+        return pc.copy()
+
+    if pc.shape[1] <= 3:
+        return pc.copy()
+
+    atten_factor = _lidar_severity_value(scale, (0.85, 0.7, 0.5, 0.35, 0.2))
+    result = pc.copy()
+
+    intensities = result[:, 3:]
+    max_intensity = np.max(intensities) if intensities.size > 0 else 1.0
+
+    result[:, 3:] = np.clip(intensities * atten_factor, 0.0, max_intensity)
+
+    return result
+
+
+def lidar_simulate_adverse_weather(
+    scale: int,
+    point_cloud: np.ndarray,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """
+    Applies combined dropout, positional jitter, and reflectivity damping to mimic adverse weather.
+
+    Parameters:
+        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
+        - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
+
+    Returns: numpy array: Weather-perturbed point cloud.
+    """
+    pc = np.asarray(point_cloud)
+    if pc.size == 0:
+        return pc.copy()
+
+    generator = _ensure_generator(rng)
+
+    drop_rate = _lidar_severity_value(scale, (0.08, 0.16, 0.28, 0.42, 0.6))
+    positional_noise = _lidar_severity_value(scale, (0.01, 0.02, 0.05, 0.08, 0.12))
+    reflectivity_factor = _lidar_severity_value(scale, (0.8, 0.65, 0.45, 0.3, 0.15))
+
+    keep_mask = generator.random(pc.shape[0]) > drop_rate
+    if not keep_mask.any():
+        keep_mask[generator.integers(0, pc.shape[0])] = True
+
+    weather_pc = pc[keep_mask].copy()
+
+    position_dims = min(3, weather_pc.shape[1])
+    weather_pc[:, :position_dims] += generator.normal(
+        loc=0.0, scale=positional_noise, size=(weather_pc.shape[0], position_dims)
+    )
+
+    if weather_pc.shape[1] > position_dims:
+        intensities = weather_pc[:, position_dims:]
+        max_intensity = np.max(intensities) if intensities.size > 0 else 1.0
+        noise = generator.normal(
+            loc=0.0,
+            scale=positional_noise / 2,
+            size=intensities.shape,
+        )
+        weather_pc[:, position_dims:] = np.clip(
+            intensities * reflectivity_factor + noise,
+            0.0,
+            max_intensity,
+        )
+
+    return weather_pc
