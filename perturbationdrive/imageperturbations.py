@@ -3,8 +3,11 @@ import cv2
 import os
 import itertools
 import skimage.exposure
+import copy
 from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
+from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.raindrop import Raindrop
 import random
+import inspect
 
 from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.config import cfg
 from perturbationdrive.perturbationfuncs import (
@@ -48,6 +51,8 @@ from perturbationdrive.perturbationfuncs import (
     fog_filter,
     frost_filter,
     snow_filter,
+    new_rain_filter,
+    new_dynamic_rain_filter,
     dynamic_snow_filter,
     dynamic_rain_filter,
     dynamic_raindrop_filter,
@@ -68,6 +73,10 @@ from perturbationdrive.perturbationfuncs import (
     static_snow_filter,
     static_smoke_filter,
     static_object_overlay,
+    lidar_point_dropout,
+    lidar_inject_ghost_points,
+    lidar_reduce_reflectivity,
+    lidar_simulate_adverse_weather,
 )
 from perturbationdrive.RoadGenerator.RoadGenerator import RoadGenerator
 from .utils.data_utils import CircularBuffer
@@ -77,9 +86,8 @@ import types
 import importlib
 from .NeuralStyleTransfer.NeuralStyleTransfer import NeuralStyleTransfer
 from .SaliencyMap import gradCam, getActivationMap
-from typing import Any, Union
+from typing import Any, Union, Optional, Callable, Dict, List, Tuple
 from .Generative.Sim2RealGen import Sim2RealGen
-from typing import List, Tuple
 
 
 class ImagePerturbation:
@@ -164,6 +172,10 @@ class ImagePerturbation:
         self.iteration=0
         self.previous_points=[]
         self.previous_sizes=[]
+        # Stateful dynamics for procedural rain
+        self._rain_points = []
+        self._rain_sizes = []
+        self._rain_shapes = None
         print(f"{5* '-'} Finished Perturbation-Controller set up {5* '-'}")
 
     def perturbation(
@@ -225,7 +237,20 @@ class ImagePerturbation:
                     map, image, func, self.saliency_threshold, intensity
                 )
         else:
-            pertub_image = func(intensity, image)
+            # Generic function or stateful instance method. If signature expects self, pass it.
+            try:
+                sig = inspect.signature(func)
+                params = list(sig.parameters.keys())
+                if params and params[0] == 'self':
+                    if(intensity > 4):
+                        print('intensity greater than 4 capping to 4')
+                        intensity = 4
+                    pertub_image = func(self, intensity, image)
+                else:
+                    pertub_image = func(intensity, image)
+            except Exception:
+                # Fallback to original calling convention
+                pertub_image = func(intensity, image)
         return cv2.resize(pertub_image, (self.width, self.height))
 
     def candy_styling(self, scale, image):
@@ -297,6 +322,83 @@ class ImagePerturbation:
         return True if ("sim2real" in func_names or "sim2sim" in func_names) else False
 
 
+    def new_dynamic_rain_filter_stateful(self, scale, image):
+        """
+        Procedural dynamic rain with stateful drop positions across frames.
+
+        - Maintains self._rain_points and self._rain_sizes.
+        - On each call, updates positions (downward drift) and respawns off-screen drops.
+        - Renders via raindrops generator using current coords and sizes.
+        """
+         # Deep copy global cfg so upstream changes propagate but we do not mutate global state.
+        local_cfg = copy.deepcopy(cfg)
+
+        # Severity schedules (align with original cfg scale)
+        target_count = [40, 60, 80, 100, 120][scale]
+        # Larger radii consistent with original generator expectations
+        size_min = [10, 20, 40, 50, 60][scale]
+        size_max = [30, 45, 60, 70, 80][scale]
+        drift_px = [2, 3, 4, 5, 6][scale]
+        jitter_x = [0, 1, 1, 2, 2][scale]
+        local_cfg['minR'] = size_min
+        local_cfg['maxR'] = size_max
+
+        H, W = image.shape[0], image.shape[1]
+
+        # Initialize if empty
+        if len(self._rain_points) == 0:
+            self._rain_points = [(np.random.randint(0, W), np.random.randint(0, H)) for _ in range(target_count)]
+            self._rain_sizes = [np.random.randint(size_min, size_max+1) for _ in range(target_count)]
+
+        # Adjust population to target_count
+        if len(self._rain_points) < target_count:
+            deficit = target_count - len(self._rain_points)
+            self._rain_points.extend([(np.random.randint(0, W), np.random.randint(0, H)) for _ in range(deficit)])
+            self._rain_sizes.extend([np.random.randint(size_min, size_max+1) for _ in range(deficit)])
+        elif len(self._rain_points) > target_count:
+            self._rain_points = self._rain_points[:target_count]
+            self._rain_sizes = self._rain_sizes[:target_count]
+
+        # Update positions (downward drift + slight x jitter); respawn off-screen
+        updated_points = []
+        updated_sizes = []
+        for (x, y), s in zip(self._rain_points, self._rain_sizes):
+            x_new = int(np.clip(x + np.random.randint(-jitter_x, jitter_x+1), 0, W-1))
+            y_new = y + drift_px + int(max(1, s//10))  # larger drops fall faster
+            if y_new >= H:
+                # respawn near top with random x
+                x_new = np.random.randint(0, W)
+                y_new = np.random.randint(-10, 20)
+                s = np.random.randint(size_min, size_max+1)
+            updated_points.append((x_new, y_new))
+            updated_sizes.append(s)
+
+        self._rain_points = updated_points
+        self._rain_sizes = updated_sizes
+
+        # Build Raindrop objects directly from stateful coords and sizes
+        drops = []
+        for idx, ((x, y), s) in enumerate(zip(self._rain_points, self._rain_sizes), start=1):
+            shape = np.random.randint(0, 3)
+            drops.append(Raindrop(idx, (int(x), int(y)), int(s), shape))
+
+        # Optional: mild per-drop motion streaks proportional to severity
+        ml = [0, 2, 3, 4, 5][scale]
+        if ml > 0:
+            for d in drops:
+                try:
+                    setattr(d, "motion_length", int(ml))
+                except Exception:
+                    pass
+
+        out = generateDrops(image, local_cfg, drops)
+
+        # Darken the image to simulate reduced ambient light during rain.
+        # Use severity-dependent attenuation; higher scale -> darker.
+        attenuation = [0.93, 0.88, 0.82, 0.75, 0.68][scale]
+        darkened = cv2.addWeighted(out, attenuation, np.zeros_like(out), 0.0, 0)
+
+        return np.asarray(darkened, dtype=np.uint8)
 
     def effects_attention_regions_dynamic(
         self,saliency_map,scale, image,name
@@ -687,6 +789,8 @@ FUNCTION_MAPPING = {
     "fog_filter": fog_filter,
     "frost_filter": frost_filter,
     "snow_filter": snow_filter,
+    "new_rain_filter": new_rain_filter,
+    "new_dynamic_rain_filter": new_dynamic_rain_filter,
     "dynamic_snow_filter": dynamic_snow_filter,
     "dynamic_rain_filter": dynamic_rain_filter,
     "dynamic_raindrop_filter": dynamic_raindrop_filter,
@@ -722,7 +826,15 @@ FUNCTION_MAPPING = {
     "sim2sim": ImagePerturbation.sim2sim,
     "effects_attention_regions": effects_attention_regions,
     "effects_attention_regions_dynamic": ImagePerturbation.effects_attention_regions_dynamic,
-    "effects_regions_dynamic": ImagePerturbation.effects_regions_dynamic
+    "effects_regions_dynamic": ImagePerturbation.effects_regions_dynamic,
+    "new_dynamic_rain_filter_stateful": ImagePerturbation.new_dynamic_rain_filter_stateful
+}
+
+LIDAR_FUNCTION_MAPPING = {
+    "lidar_point_dropout": lidar_point_dropout,
+    "lidar_ghost_points": lidar_inject_ghost_points,
+    "lidar_reduced_reflectivity": lidar_reduce_reflectivity,
+    "lidar_adverse_weather": lidar_simulate_adverse_weather,
 }
 
 # mapping of dynamic perturbation functions to their image path and iterator name
@@ -786,9 +898,9 @@ STATIC_PATHS = {
     ),
     static_rain_filter: (
         "./perturbationdrive/OverlayMasks/static_rain.png",
-        "_rain_mask",
-        [3, 129, 8],
-        40,
+       "_rain_mask",
+       [3, 129, 8],
+       40,
     ),
     static_object_overlay: (
         "./perturbationdrive/OverlayMasks/static_birds.png",
@@ -831,6 +943,65 @@ MASK_MAPPING = {
 }
 
 
+class LidarPerturbation:
+    """Controller for LiDAR-specific perturbations."""
+
+    def __init__(
+        self,
+        funcs: Optional[List[str]] = None,
+        rng: Optional[np.random.Generator] = None,
+    ) -> None:
+        if funcs is None or len(funcs) == 0:
+            self._func_map: Dict[str, Callable] = dict(LIDAR_FUNCTION_MAPPING)
+        else:
+            self._func_map = {
+                name: LIDAR_FUNCTION_MAPPING[name]
+                for name in funcs
+                if name in LIDAR_FUNCTION_MAPPING
+            }
+
+        if len(self._func_map) == 0:
+            raise ValueError("No valid LiDAR perturbations provided.")
+
+        self._rng = rng if rng is not None else np.random.default_rng()
+
+    def list_available(self) -> List[str]:
+        return list(self._func_map.keys())
+
+    def perturbation(
+        self,
+        point_cloud: np.ndarray,
+        perturbation_name: str,
+        intensity: int,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        if perturbation_name == "":
+            return np.asarray(point_cloud).copy()
+
+        if perturbation_name not in self._func_map:
+            raise KeyError(
+                f"Unknown LiDAR perturbation '{perturbation_name}'. Available: {self.list_available()}"
+            )
+
+        func = self._func_map[perturbation_name]
+        bound_kwargs = dict(kwargs)
+        signature = inspect.signature(func)
+
+        if "rng" in signature.parameters and "rng" not in bound_kwargs:
+            bound_kwargs["rng"] = self._rng
+
+        return func(intensity, point_cloud, **bound_kwargs)
+
+    def __call__(
+        self,
+        point_cloud: np.ndarray,
+        perturbation_name: str,
+        intensity: int,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        return self.perturbation(point_cloud, perturbation_name, intensity, **kwargs)
+
+
 def _convertStringToPertubation(func_names):
     """
     Converts a list of function names into a list of perturbation functions
@@ -860,14 +1031,17 @@ def get_functions_from_module(module_name):
         if isinstance(getattr(module, attr_name), types.FunctionType)
         and getattr(module, attr_name).__module__ == module_name
     ]
-    functions_list = [
-        func
-        for func in functions_list
-        if func.__name__ != "perturb_high_attention_regions"
-        and func.__name__ != "high_pass_filter"
-        and func.__name__ != "fog_mapping"
-        and func.__name__ != "zoom_blur"
-    ]
+    excluded = {
+        "perturb_high_attention_regions",
+        "high_pass_filter",
+        "fog_mapping",
+        "zoom_blur",
+        "lidar_point_dropout",
+        "lidar_inject_ghost_points",
+        "lidar_reduce_reflectivity",
+        "lidar_simulate_adverse_weather",
+    }
+    functions_list = [func for func in functions_list if func.__name__ not in excluded]
     return functions_list
 
 
