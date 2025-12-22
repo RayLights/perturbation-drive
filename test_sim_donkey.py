@@ -1,20 +1,46 @@
-from perturbationdrive import PerturbationDrive,CustomRoadGenerator
+import platform
+import os
+from pathlib import Path
+from perturbationdrive import PerturbationDrive, CustomRoadGenerator
 from examples.self_driving_sandbox_donkey.sdsandbox_simulator import SDSandboxSimulator
 from examples.models.dave2_agent import Dave2Agent
 import traceback
 from datetime import datetime
 
-
-
+def get_simulator_path():
+    """Simple OS detection for simulator path"""
+    base_path = "./examples/self_driving_sandbox_donkey/sim"
+    system = platform.system().lower()
+    
+    # Platform-specific simulator paths
+    paths = {
+        "darwin": f"{base_path}/sdsim_macos/sdsim_macos.app",
+        "linux": f"{base_path}/sdsim_linux/sdsim_binary.x86_64", 
+        "windows": f"{base_path}/sdsim_windows/sdsim_binary.exe" # do we support windows ? 
+    }
+    
+    if system not in paths:
+        raise OSError(f"Unsupported platform: {system}")
+    
+    path = paths[system]
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Simulator not found at: {path}")
+    
+    return path
 
 try:
+    # Automatic platform detection
+    simulator_path = get_simulator_path()
+    print(f"Detected platform: {platform.system()}")
+    print(f"Using simulator: {simulator_path}")
+    
     simulator = SDSandboxSimulator(
-        # TODO change path depending on OS
-        simulator_exe_path="./examples/self_driving_sandbox_donkey/sim/sdsim_linux/sdsim_binary.x86_64",
+        simulator_exe_path=simulator_path,
         host="127.0.0.1",
         port=9091,
         show_image_cb=True
     )
+    
     ads = Dave2Agent(model_path="./examples/models/checkpoints/dave_90k_v1.h5")
     road_angles = [0, -35, 0, -17, -35, 35, 6, -22]
     road_segments = [25, 25, 25, 25, 25, 25, 25, 25]
@@ -68,6 +94,8 @@ try:
         "gaussian_blur",
         "saturation_filter",
         "saturation_decrease_filter",
+        "new_rain_filter",
+        "static_rain_filter",
         # "candy",
         # "la_muse",
         # "mosaic",
