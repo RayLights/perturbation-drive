@@ -183,13 +183,39 @@ class PerturbationSimulator(ABC):
 Read the README in the `perturbationdrive/simulator/` directory for more documentation on simulator integration. Also, have a look at the example integrations in `examples/self_driving_sandbox_donkey/` and `examples/udacity/`.
 
 
+### Downloading Required Assets
+
+**Note**: To keep the repository lightweight and fast to clone, large binary files have been excluded from version control. These include:
+- Simulator binaries
+- Model checkpoints (.h5 files)
+- Large video/image mask files
+- Jupyter notebooks with embedded outputs
+
+All required assets are available for download from Google Drive: https://drive.google.com/drive/folders/1_8v3NfX3j_holplmxNRuszirhGfUzVv4?usp=sharing
+
 ### Installing simulators
-Both the source and compiled binaries are available at: https://drive.google.com/drive/folders/1_8v3NfX3j_holplmxNRuszirhGfUzVv4?usp=sharing
+Both the source and compiled binaries are available at the Google Drive link above.
 
-Currently we probide pre-compiled binaries for Mac (ARM/M silicon) and Linux(x86). To buld the simulator for other platforms, please use Unity 2019.3.0f1 for Udacity and Unity 2022.3.10f1 for Donkeycar.
+Currently we provide pre-compiled binaries for Mac (ARM/M silicon) and Linux(x86). To build the simulator for other platforms, please use Unity 2019.3.0f1 for Udacity and Unity 2022.3.10f1 for Donkeycar.
 
-Once the binaries are downloaded or bult, they have to be saved in their respective adapter folders.
-./examples/[udacity,self_driving_sandbox_donkey]/sim/[sim_name].[os-defined executable]
+Once the binaries are downloaded or built, they have to be saved in their respective adapter folders:
+- `./examples/udacity/sim/udacity_linux/` (for Udacity simulator on Linux)
+- `./examples/self_driving_sandbox_donkey/sim/sdsim_linux/` (for Donkey simulator on Linux)
+
+### Downloading Model Checkpoints
+
+Model checkpoint files should be placed in:
+- `./checkpoints/` - For main model checkpoints
+- `./examples/models/checkpoints/` - For example model checkpoints
+
+See the README files in these directories for more information.
+
+### Downloading Overlay Masks
+
+If you need the large video mask files for perturbations, download them from the Google Drive and place them in:
+- `./perturbationdrive/OverlayMasks/`
+
+See the README in this directory for details on which files are available.
 
 
 ### Minimal SDSandbox Example

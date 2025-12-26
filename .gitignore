@@ -265,3 +265,26 @@ myenv
 # folder for end users to run scripts which should not be tracked
 examples/test_dir/*
 !examples/test_dir/README.md
+
+# Large simulator binaries should be downloaded separately
+examples/udacity/sim/udacity_linux/
+examples/self_driving_sandbox_donkey/sim/sdsim_linux/
+
+# Large model checkpoints should be downloaded on demand
+checkpoints/*.h5
+examples/models/checkpoints/*.h5
+
+# Large video and image masks should be downloaded separately
+perturbationdrive/OverlayMasks/*.mp4
+perturbationdrive/OverlayMasks/MasksZip.zip
+perturbationdrive/OverlayMasks/static_*.png
+
+# Large Jupyter notebooks with outputs
+*.ipynb
+
+# Analysis data directories
+ICST2025_analysis/
+
+# Large documentation images
+perturbed_outputs.png
+0001_0.png
