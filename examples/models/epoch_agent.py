@@ -32,7 +32,7 @@ class EpochAgent(ADS):
             print(f"Prediction time: {time.time()- start_time} seconds")
         self.name = model_path.split("/")[-1].split(".")[0]
 
-    def action(self, input: ndarray[Any, dtype[uint8]]) -> List:
+    def action(self, input: ndarray) -> List:
         """
         Takes one action step given the input, here the input is a cv2 image.
         This method also contains the preparation for the underlying model
