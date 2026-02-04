@@ -173,6 +173,11 @@ class ImagePerturbation:
         self.previous_points=[]
         self.previous_sizes=[]
         # Stateful dynamics for procedural rain
+        # --- NEW: CACHE STORAGE ---
+        # Stores pre-rendered rain loops. Key: scale (int) -> Value: List[np.array]
+        self._rain_cache = {}          
+        # Tracks the current frame index for playback. Key: scale (int) -> Value: int (index)
+        self._rain_cache_indices = {}
         self._rain_points = []
         self._rain_sizes = []
         self._rain_shapes = None
@@ -183,7 +188,7 @@ class ImagePerturbation:
         image,
         perturbation_name: str,
         intensity: int,
-    ) -> np.ndarray[Any, np.dtype[np.uint8]]:
+    ) -> np.ndarray:
         """
         Perturbs the image based on the function name given
         """
@@ -322,7 +327,109 @@ class ImagePerturbation:
         return True if ("sim2real" in func_names or "sim2sim" in func_names) else False
 
 
+    def _generate_rain_loop(self, scale, h, w, cache_length=60):
+        """
+        Internal worker: Generates a sequence of rain frames on a blank background.
+        """
+        frames = []
+        
+        # --- Physics Parameters (copied from your original logic) ---
+        local_cfg = copy.deepcopy(cfg)
+        target_count = [40, 60, 80, 100, 120][scale]
+        size_min = [10, 20, 40, 50, 60][scale]
+        size_max = [30, 45, 60, 70, 80][scale]
+        drift_px = [2, 3, 4, 5, 6][scale]
+        jitter_x = [0, 1, 1, 2, 2][scale]
+        ml = [0, 2, 3, 4, 5][scale]
+        local_cfg['minR'] = size_min
+        local_cfg['maxR'] = size_max
+
+        # Initial random state
+        points = [(np.random.randint(0, w), np.random.randint(0, h)) for _ in range(target_count)]
+        sizes = [np.random.randint(size_min, size_max+1) for _ in range(target_count)]
+
+        # Generate Loop
+        for _ in range(cache_length):
+            # Update positions
+            new_points = []
+            new_sizes = []
+            for (x, y), s in zip(points, sizes):
+                x_new = int(np.clip(x + np.random.randint(-jitter_x, jitter_x+1), 0, w-1))
+                y_new = y + drift_px + int(max(1, s//10))
+                
+                if y_new >= h: # Respawn
+                    x_new = np.random.randint(0, w)
+                    y_new = np.random.randint(-10, 20)
+                    s = np.random.randint(size_min, size_max+1)
+                
+                new_points.append((x_new, y_new))
+                new_sizes.append(s)
+            
+            points = new_points
+            sizes = new_sizes
+
+            # Create Raindrop objects
+            drops = []
+            for idx, ((x, y), s) in enumerate(zip(points, sizes), start=1):
+                shape = np.random.randint(0, 3)
+                d = Raindrop(idx, (int(x), int(y)), int(s), shape)
+                if ml > 0:
+                    try: setattr(d, "motion_length", int(ml))
+                    except: pass
+                drops.append(d)
+
+            # Render on BLACK background (important for overlaying)
+            blank_canvas = np.zeros((h, w, 3), dtype=np.uint8)
+            rain_layer = generateDrops(blank_canvas, local_cfg, drops)
+            frames.append(rain_layer)
+            
+        return frames
+
+    def preload_rain_cache(self, scales=[0, 1, 2, 3, 4]):
+        """
+        PUBLIC: Call this before your real-time loop starts.
+        It pre-calculates rain animations for the specified scales 
+        at the resolution defined in self.height/self.width.
+        """
+        print(f"Pre-loading rain animations for scales {scales}...")
+        for s in scales:
+            # We use self.height/width as the canonical size
+            if s not in self._rain_cache:
+                self._rain_cache[s] = self._generate_rain_loop(s, self.height, self.width)
+                self._rain_cache_indices[s] = 0
+        print("Rain pre-loading complete.")
+
     def new_dynamic_rain_filter_stateful(self, scale, image):
+        """
+        Real-time Optimized Rain Filter.
+        Requires 'preload_rain_cache()' to be run beforehand for best performance.
+        """
+        # Ensure we have the cache for this scale
+        if scale not in self._rain_cache:
+            # Fallback: Lazy load if user forgot to preload
+            # print(f"Warning: Rain scale {scale} was not preloaded. Generating now...")
+            self._rain_cache[scale] = self._generate_rain_loop(scale, self.height, self.width)
+            self._rain_cache_indices[scale] = 0
+
+        # 1. Retrieve the next frame
+        frames = self._rain_cache[scale]
+        idx = self._rain_cache_indices[scale]
+        rain_overlay = frames[idx]
+
+        # 2. Advance the index (looping)
+        self._rain_cache_indices[scale] = (idx + 1) % len(frames)
+
+        # 3. Composite onto image
+        # Darken the original image
+        attenuation = [0.93, 0.88, 0.82, 0.75, 0.68][scale]
+        
+        # Blend: (Image * Attenuation) + (RainOverlay * Attenuation)
+        # We darken the rain overlay too so it blends naturally into the dark scene
+        final_image = cv2.addWeighted(image, attenuation, rain_overlay, attenuation, 0)
+
+        return np.asarray(final_image, dtype=np.uint8)
+    
+    def new_dynamic_rain_filter_stateful1(self, scale, image):
         """
         Procedural dynamic rain with stateful drop positions across frames.
 
@@ -837,46 +944,48 @@ LIDAR_FUNCTION_MAPPING = {
     "lidar_adverse_weather": lidar_simulate_adverse_weather,
 }
 
+BASE_PATH = "/home/cam2sim/perturbation-drive"
+
 # mapping of dynamic perturbation functions to their image path and iterator name
 FILTER_PATHS = {
     dynamic_snow_filter: (
-        "./perturbationdrive/OverlayMasks/snow.mp4",
+        f'{BASE_PATH}/perturbationdrive/OverlayMasks/snow.mp4',
         "_snow_iterator",
         [8, 255, 18],
         45,
     ),
     dynamic_lightning_filter: (
-        "./perturbationdrive/OverlayMasks/lightning.mp4",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/lightning.mp4",
         "_lightning_iterator",
         [32, 91, 10],
         45,
     ),
     dynamic_rain_filter: (
-        "./perturbationdrive/OverlayMasks/rain.mp4",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/rain.mp4",
         "_rain_iterator",
         [3, 129, 8],
         40,
     ),
     dynamic_raindrop_filter: (
-        "./perturbationdrive/OverlayMasks/test.mp4",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/test.mp4",
         "_raindrop_iterator",
         [8, 255, 18],
         45,
     ),
     dynamic_object_overlay: (
-        "./perturbationdrive/OverlayMasks/birds.mp4",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/birds.mp4",
         "_bird_iterator",
         [66, 193, 5],
         40,
     ),
     dynamic_smoke_filter: (
-        "./perturbationdrive/OverlayMasks/smoke.mp4",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/smoke.mp4",
         "_smoke_iterator",
         [37, 149, 59],
         75
     ),
     dynamic_sun_filter: (
-        "./perturbationdrive/OverlayMasks/sun.mp4",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/sun.mp4",
         "_sun_iterator",
         [9, 166,  56],
         60
@@ -885,37 +994,37 @@ FILTER_PATHS = {
 
 STATIC_PATHS = {
     static_snow_filter: (
-        "./perturbationdrive/OverlayMasks/static_snow.png",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/static_snow.png",
         "_snow_mask",
         [8, 255, 18],
         45.0,
     ),
     static_lightning_filter: (
-        "./perturbationdrive/OverlayMasks/static_light.png",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/static_light.png",
         "_lightning_mask",
         [32, 91, 10],
         45,
     ),
     static_rain_filter: (
-        "./perturbationdrive/OverlayMasks/static_rain.png",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/static_rain.png",
        "_rain_mask",
        [3, 129, 8],
        40,
     ),
     static_object_overlay: (
-        "./perturbationdrive/OverlayMasks/static_birds.png",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/static_birds.png",
         "_bird_mask",
         [66, 193, 5],
         40,
     ),
     static_smoke_filter: (
-        "./perturbationdrive/OverlayMasks/static_smoke.png",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/static_smoke.png",
         "_smoke_mask",
         [37, 149, 59],
         75
     ),
     static_sun_filter: (
-        "./perturbationdrive/OverlayMasks/static_sun.png",
+        f"{BASE_PATH}/perturbationdrive/OverlayMasks/static_sun.png",
         "_sun_mask",
         [9, 166,  56],
         60
