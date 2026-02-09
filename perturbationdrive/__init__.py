@@ -1,6 +1,9 @@
 from perturbationdrive.imageperturbations import (
     ImagePerturbation,
 )
+from perturbationdrive.lidarperturbations import(
+    LidarPerturbation,
+)
 
 from perturbationdrive.RoadGenerator import (
     RoadGenerator,
