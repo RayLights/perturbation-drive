@@ -1769,35 +1769,6 @@ def _ensure_generator(rng: Optional[np.random.Generator]) -> np.random.Generator
     return rng
 
 
-def lidar_point_dropout(
-    scale: int,
-    point_cloud: np.ndarray,
-    rng: Optional[np.random.Generator] = None,
-) -> np.ndarray:
-    """
-    Randomly removes a percentage of points from the LiDAR point cloud to mimic occlusions.
-
-    Parameters:
-        - scale int: The severity of the perturbation on a scale from 0 to 4.
-        - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
-        - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
-
-    Returns: numpy array: Point cloud with points dropped according to severity.
-    """
-    pc = np.asarray(point_cloud)
-    if pc.size == 0:
-        return pc.copy()
-
-    drop_rate = _lidar_severity_value(scale, (0.05, 0.1, 0.2, 0.35, 0.5))
-    generator = _ensure_generator(rng)
-
-    keep_mask = generator.random(pc.shape[0]) > drop_rate
-    if not keep_mask.any():
-        keep_mask[generator.integers(0, pc.shape[0])] = True
-
-    return pc[keep_mask].copy()
-
-
 def lidar_inject_ghost_points(
     scale: int,
     point_cloud: np.ndarray,
