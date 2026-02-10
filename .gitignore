@@ -265,3 +265,5 @@ myenv
 # folder for end users to run scripts which should not be tracked
 examples/test_dir/*
 !examples/test_dir/README.md
+# dataset 
+dataset/
