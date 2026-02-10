@@ -73,10 +73,6 @@ from perturbationdrive.perturbationfuncs import (
     static_snow_filter,
     static_smoke_filter,
     static_object_overlay,
-    lidar_point_dropout,
-    lidar_inject_ghost_points,
-    lidar_reduce_reflectivity,
-    lidar_simulate_adverse_weather,
 )
 from perturbationdrive.RoadGenerator.RoadGenerator import RoadGenerator
 from .utils.data_utils import CircularBuffer
@@ -830,53 +826,48 @@ FUNCTION_MAPPING = {
     "new_dynamic_rain_filter_stateful": ImagePerturbation.new_dynamic_rain_filter_stateful
 }
 
-LIDAR_FUNCTION_MAPPING = {
-    "lidar_point_dropout": lidar_point_dropout,
-    "lidar_ghost_points": lidar_inject_ghost_points,
-    "lidar_reduced_reflectivity": lidar_reduce_reflectivity,
-    "lidar_adverse_weather": lidar_simulate_adverse_weather,
-}
+base_path = "/home/mattweil/perturbation-drive"
 
 # mapping of dynamic perturbation functions to their image path and iterator name
 FILTER_PATHS = {
     dynamic_snow_filter: (
-        "./perturbationdrive/OverlayMasks/snow.mp4",
+        f'{base_path}/perturbationdrive/OverlayMasks/snow.mp4',
         "_snow_iterator",
         [8, 255, 18],
         45,
     ),
     dynamic_lightning_filter: (
-        "./perturbationdrive/OverlayMasks/lightning.mp4",
+        f'{base_path}/perturbationdrive/OverlayMasks/lightning.mp4',
         "_lightning_iterator",
         [32, 91, 10],
         45,
     ),
     dynamic_rain_filter: (
-        "./perturbationdrive/OverlayMasks/rain.mp4",
+        f'{base_path}/perturbationdrive/OverlayMasks/rain.mp4',
         "_rain_iterator",
         [3, 129, 8],
         40,
     ),
     dynamic_raindrop_filter: (
-        "./perturbationdrive/OverlayMasks/test.mp4",
+        f'{base_path}/perturbationdrive/OverlayMasks/test.mp4',
         "_raindrop_iterator",
         [8, 255, 18],
         45,
     ),
     dynamic_object_overlay: (
-        "./perturbationdrive/OverlayMasks/birds.mp4",
+        f'{base_path}/perturbationdrive/OverlayMasks/birds.mp4',
         "_bird_iterator",
         [66, 193, 5],
         40,
     ),
     dynamic_smoke_filter: (
-        "./perturbationdrive/OverlayMasks/smoke.mp4",
+        f'{base_path}/perturbationdrive/OverlayMasks/smoke.mp4',
         "_smoke_iterator",
         [37, 149, 59],
         75
     ),
     dynamic_sun_filter: (
-        "./perturbationdrive/OverlayMasks/sun.mp4",
+        f'{base_path}/perturbationdrive/OverlayMasks/sun.mp4',
         "_sun_iterator",
         [9, 166,  56],
         60
@@ -885,37 +876,37 @@ FILTER_PATHS = {
 
 STATIC_PATHS = {
     static_snow_filter: (
-        "./perturbationdrive/OverlayMasks/static_snow.png",
+        f'{base_path}/perturbationdrive/OverlayMasks/static_snow.png',
         "_snow_mask",
         [8, 255, 18],
         45.0,
     ),
     static_lightning_filter: (
-        "./perturbationdrive/OverlayMasks/static_light.png",
+        f'{base_path}/perturbationdrive/OverlayMasks/static_light.png',
         "_lightning_mask",
         [32, 91, 10],
         45,
     ),
     static_rain_filter: (
-        "./perturbationdrive/OverlayMasks/static_rain.png",
+        f'{base_path}/perturbationdrive/OverlayMasks/static_rain.png',
        "_rain_mask",
        [3, 129, 8],
        40,
     ),
     static_object_overlay: (
-        "./perturbationdrive/OverlayMasks/static_birds.png",
+        f'{base_path}/perturbationdrive/OverlayMasks/static_birds.png',
         "_bird_mask",
         [66, 193, 5],
         40,
     ),
     static_smoke_filter: (
-        "./perturbationdrive/OverlayMasks/static_smoke.png",
+        f'{base_path}/perturbationdrive/OverlayMasks/static_smoke.png',
         "_smoke_mask",
         [37, 149, 59],
         75
     ),
     static_sun_filter: (
-        "./perturbationdrive/OverlayMasks/static_sun.png",
+        f'{base_path}/perturbationdrive/OverlayMasks/static_sun.png',
         "_sun_mask",
         [9, 166,  56],
         60
@@ -941,66 +932,6 @@ MASK_MAPPING = {
     static_object_overlay: "_bird_mask",
     static_smoke_filter: "_smoke_mask",
 }
-
-
-class LidarPerturbation:
-    """Controller for LiDAR-specific perturbations."""
-
-    def __init__(
-        self,
-        funcs: Optional[List[str]] = None,
-        rng: Optional[np.random.Generator] = None,
-    ) -> None:
-        if funcs is None or len(funcs) == 0:
-            self._func_map: Dict[str, Callable] = dict(LIDAR_FUNCTION_MAPPING)
-        else:
-            self._func_map = {
-                name: LIDAR_FUNCTION_MAPPING[name]
-                for name in funcs
-                if name in LIDAR_FUNCTION_MAPPING
-            }
-
-        if len(self._func_map) == 0:
-            raise ValueError("No valid LiDAR perturbations provided.")
-
-        self._rng = rng if rng is not None else np.random.default_rng()
-
-    def list_available(self) -> List[str]:
-        return list(self._func_map.keys())
-
-    def perturbation(
-        self,
-        point_cloud: np.ndarray,
-        perturbation_name: str,
-        intensity: int,
-        **kwargs: Any,
-    ) -> np.ndarray:
-        if perturbation_name == "":
-            return np.asarray(point_cloud).copy()
-
-        if perturbation_name not in self._func_map:
-            raise KeyError(
-                f"Unknown LiDAR perturbation '{perturbation_name}'. Available: {self.list_available()}"
-            )
-
-        func = self._func_map[perturbation_name]
-        bound_kwargs = dict(kwargs)
-        signature = inspect.signature(func)
-
-        if "rng" in signature.parameters and "rng" not in bound_kwargs:
-            bound_kwargs["rng"] = self._rng
-
-        return func(intensity, point_cloud, **bound_kwargs)
-
-    def __call__(
-        self,
-        point_cloud: np.ndarray,
-        perturbation_name: str,
-        intensity: int,
-        **kwargs: Any,
-    ) -> np.ndarray:
-        return self.perturbation(point_cloud, perturbation_name, intensity, **kwargs)
-
 
 def _convertStringToPertubation(func_names):
     """
@@ -1036,10 +967,6 @@ def get_functions_from_module(module_name):
         "high_pass_filter",
         "fog_mapping",
         "zoom_blur",
-        "lidar_point_dropout",
-        "lidar_inject_ghost_points",
-        "lidar_reduce_reflectivity",
-        "lidar_simulate_adverse_weather",
     }
     functions_list = [func for func in functions_list if func.__name__ not in excluded]
     return functions_list
