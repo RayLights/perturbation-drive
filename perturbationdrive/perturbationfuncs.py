@@ -1778,7 +1778,7 @@ def lidar_point_dropout(
     Randomly removes a percentage of points from the LiDAR point cloud to mimic occlusions.
 
     Parameters:
-        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - scale (int): The severity of the perturbation on a scale from 0 to 4.
         - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
         - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
 
@@ -1811,7 +1811,7 @@ def lidar_inject_ghost_points(
     Adds ghost points to the LiDAR point cloud to simulate multi-path reflections.
 
     Parameters:
-        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - scale (int): The severity of the perturbation on a scale from 0 to 4.
         - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
         - bounds tuple: Optional explicit (min, max) bounds for ghost placement.
         - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
