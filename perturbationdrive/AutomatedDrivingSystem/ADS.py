@@ -10,7 +10,7 @@ class ADS(ABC):
     """
 
     @abstractmethod
-    def action(self, input: ndarray[Any, dtype[uint8]]) -> List:
+    def action(self, input: ndarray) -> List:
         """
         Takes one action step given the input, here the input is a cv2 image.
         This method also contains the preparation for the underlying model

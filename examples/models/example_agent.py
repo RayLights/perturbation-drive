@@ -13,7 +13,7 @@ class ExampleAgent(ADS):
     def __init__(self):
         self.name = "random agent"
 
-    def action(self, _: ndarray[Any, dtype[uint8]]) -> List:
+    def action(self, _: ndarray) -> List:
         """
         Takes one action step given the input, here the input is a cv2 image.
         This method also contains the preparation for the underlying model
