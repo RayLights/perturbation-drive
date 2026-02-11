@@ -77,6 +77,8 @@ from perturbationdrive.perturbationfuncs import (
     lidar_inject_ghost_points,
     lidar_reduce_reflectivity,
     lidar_simulate_adverse_weather,
+    lidar_range_noise,
+    lidar_sensor_miscalibration,
 )
 from perturbationdrive.RoadGenerator.RoadGenerator import RoadGenerator
 from .utils.data_utils import CircularBuffer
@@ -942,6 +944,8 @@ LIDAR_FUNCTION_MAPPING = {
     "lidar_ghost_points": lidar_inject_ghost_points,
     "lidar_reduced_reflectivity": lidar_reduce_reflectivity,
     "lidar_adverse_weather": lidar_simulate_adverse_weather,
+    "lidar_range_noise": lidar_range_noise,
+    "lidar_sensor_miscalibration": lidar_sensor_miscalibration,
 }
 
 BASE_PATH = "/home/cam2sim/perturbation-drive"
@@ -1149,6 +1153,8 @@ def get_functions_from_module(module_name):
         "lidar_inject_ghost_points",
         "lidar_reduce_reflectivity",
         "lidar_simulate_adverse_weather",
+        "lidar_range_noise",
+        "lidar_sensor_miscalibration",
     }
     functions_list = [func for func in functions_list if func.__name__ not in excluded]
     return functions_list

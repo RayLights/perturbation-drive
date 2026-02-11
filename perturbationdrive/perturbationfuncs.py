@@ -1754,6 +1754,21 @@ def _ensure_generator(rng: Optional[np.random.Generator]) -> np.random.Generator
     return rng
 
 
+def _lidar_rotation_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    cos_r, sin_r = np.cos(roll), np.sin(roll)
+    cos_p, sin_p = np.cos(pitch), np.sin(pitch)
+    cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+
+    return np.array(
+        [
+            [cos_y * cos_p, cos_y * sin_p * sin_r - sin_y * cos_r, cos_y * sin_p * cos_r + sin_y * sin_r],
+            [sin_y * cos_p, sin_y * sin_p * sin_r + cos_y * cos_r, sin_y * sin_p * cos_r - cos_y * sin_r],
+            [-sin_p, cos_p * sin_r, cos_p * cos_r],
+        ],
+        dtype=np.float32,
+    )
+
+
 def lidar_point_dropout(
     scale: int,
     point_cloud: np.ndarray,
@@ -1768,6 +1783,9 @@ def lidar_point_dropout(
         - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
 
     Returns: numpy array: Point cloud with points dropped according to severity.
+
+    References:
+        [1] M. Hahner et al., "LiDAR Simulation for Perception in Autonomous Driving", IEEE IV, 2019.
     """
     pc = np.asarray(point_cloud)
     if pc.size == 0:
@@ -1799,6 +1817,9 @@ def lidar_inject_ghost_points(
         - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
 
     Returns: numpy array: Point cloud augmented with ghost points.
+
+    References:
+        [1] Y. Shin et al., "Illusion and Dazzle: Adversarial Optical Channel Exploits Against LiDARs in Autonomous Vehicles", USENIX Security, 2019.
     """
     pc = np.asarray(point_cloud)
     if pc.size == 0:
@@ -1839,6 +1860,9 @@ def lidar_reduce_reflectivity(scale: int, point_cloud: np.ndarray) -> np.ndarray
         - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
 
     Returns: numpy array: Point cloud with reduced intensity values.
+
+    References:
+        [1] C. Glennie and D. Lichti, "Static Calibration and Analysis of the Velodyne HDL-64E S2 for High Accuracy Mobile Scanning", Remote Sensing, 2010.
     """
     pc = np.asarray(point_cloud)
     if pc.size == 0:
@@ -1872,6 +1896,10 @@ def lidar_simulate_adverse_weather(
         - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
 
     Returns: numpy array: Weather-perturbed point cloud.
+
+    References:
+        [1] R. Bijelic et al., "Seeing Through Fog Without Seeing Fog: Deep Sensor Fusion in the Presence of Fog", CVPR, 2020.
+        [2] J. Goodin et al., "Predicting the Effects of Rain on LiDAR", IEEE IV, 2019.
     """
     pc = np.asarray(point_cloud)
     if pc.size == 0:
@@ -1909,3 +1937,81 @@ def lidar_simulate_adverse_weather(
         )
 
     return weather_pc
+
+
+def lidar_range_noise(
+    scale: int,
+    point_cloud: np.ndarray,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """
+    Perturbs the radial distance of LiDAR points to mimic range measurement noise.
+
+    Parameters:
+        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
+        - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
+
+    Returns: numpy array: Point cloud with noisy radial distances.
+
+    References:
+        [1] C. Glennie and D. Lichti, "Static Calibration and Analysis of the Velodyne HDL-64E S2 for High Accuracy Mobile Scanning", Remote Sensing, 2010.
+    """
+    pc = np.asarray(point_cloud)
+    if pc.size == 0 or pc.shape[1] < 3:
+        return pc.copy()
+
+    generator = _ensure_generator(rng)
+    range_sigma = _lidar_severity_value(scale, (0.01, 0.02, 0.05, 0.08, 0.12))
+
+    positions = pc[:, :3].astype(np.float32, copy=False)
+    ranges = np.linalg.norm(positions, axis=1, keepdims=True)
+    noise = generator.normal(loc=0.0, scale=range_sigma, size=ranges.shape)
+    perturbed_ranges = np.clip(ranges + noise, 0.0, None)
+    scale_factor = np.divide(
+        perturbed_ranges,
+        ranges,
+        out=np.ones_like(perturbed_ranges),
+        where=ranges > 0,
+    )
+
+    result = pc.copy()
+    result[:, :3] = positions * scale_factor
+    return result
+
+
+def lidar_sensor_miscalibration(
+    scale: int,
+    point_cloud: np.ndarray,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """
+    Applies small rotational and translational biases to simulate calibration drift.
+
+    Parameters:
+        - scale int: The severity of the perturbation on a scale from 0 to 4.
+        - point_cloud (numpy array): Array shaped (N, C) representing LiDAR points.
+        - rng (numpy.random.Generator | None): Optional RNG for reproducibility.
+
+    Returns: numpy array: Point cloud with biased pose.
+
+    References:
+        [1] J. Levinson and S. Thrun, "Automatic Online Calibration of Cameras and Lasers", RSS, 2013.
+    """
+    pc = np.asarray(point_cloud)
+    if pc.size == 0 or pc.shape[1] < 3:
+        return pc.copy()
+
+    generator = _ensure_generator(rng)
+    angle_sigma = _lidar_severity_value(scale, (0.002, 0.005, 0.01, 0.02, 0.03))
+    translation_sigma = _lidar_severity_value(scale, (0.01, 0.02, 0.05, 0.08, 0.12))
+
+    roll, pitch, yaw = generator.normal(loc=0.0, scale=angle_sigma, size=3)
+    rotation = _lidar_rotation_matrix(roll, pitch, yaw)
+    translation = generator.normal(loc=0.0, scale=translation_sigma, size=3).astype(
+        np.float32
+    )
+
+    result = pc.copy()
+    result[:, :3] = pc[:, :3].astype(np.float32, copy=False) @ rotation.T + translation
+    return result

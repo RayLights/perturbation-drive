@@ -1,5 +1,6 @@
 from perturbationdrive.imageperturbations import (
     ImagePerturbation,
+    LidarPerturbation,
 )
 
 from perturbationdrive.RoadGenerator import (
@@ -62,6 +63,12 @@ from perturbationdrive.perturbationfuncs import (
     static_snow_filter,
     static_smoke_filter,
     static_object_overlay,
+    lidar_point_dropout,
+    lidar_inject_ghost_points,
+    lidar_reduce_reflectivity,
+    lidar_simulate_adverse_weather,
+    lidar_range_noise,
+    lidar_sensor_miscalibration,
 )
 
 from .utils.data_utils import CircularBuffer

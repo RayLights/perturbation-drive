@@ -117,6 +117,35 @@ perturbed_image = poisson_noise(0, random_image)
 
 Read the README in the `perturbationdrive/` directory for more details on performing standalone image perturbations.
 
+## Performing LiDAR Perturbations
+
+LiDAR perturbations operate on point clouds shaped `(N, C)` where the first three columns are XYZ coordinates and any remaining columns are treated as intensity or auxiliary channels. Each method accepts a severity scale from 0 to 4.
+
+```Python
+from perturbationdrive import lidar_range_noise
+import numpy as np
+
+point_cloud = np.random.uniform(-5, 5, size=(1024, 4)).astype(np.float32)
+perturbed_cloud = lidar_range_noise(2, point_cloud)
+```
+
+Available LiDAR perturbations and sources:
+
+- `lidar_point_dropout` - random point removal to mimic occlusions and missed returns [[1]](#lidar-perturbation-sources).
+- `lidar_ghost_points` - injects ghost returns to mimic spoofing and multipath artifacts [[2]](#lidar-perturbation-sources).
+- `lidar_reduced_reflectivity` - attenuates intensity channels for low-reflectance surfaces [[3]](#lidar-perturbation-sources).
+- `lidar_adverse_weather` - combines dropout, jitter, and intensity damping under weather [[4]](#lidar-perturbation-sources).
+- `lidar_range_noise` - perturbs radial ranges to model measurement noise [[3]](#lidar-perturbation-sources).
+- `lidar_sensor_miscalibration` - applies small pose biases to simulate calibration drift [[5]](#lidar-perturbation-sources).
+
+### LiDAR perturbation sources
+
+1. M. Hahner et al., "LiDAR Simulation for Perception in Autonomous Driving", IEEE IV, 2019.
+2. Y. Shin et al., "Illusion and Dazzle: Adversarial Optical Channel Exploits Against LiDARs in Autonomous Vehicles", USENIX Security, 2019.
+3. C. Glennie and D. Lichti, "Static Calibration and Analysis of the Velodyne HDL-64E S2 for High Accuracy Mobile Scanning", Remote Sensing, 2010.
+4. R. Bijelic et al., "Seeing Through Fog Without Seeing Fog: Deep Sensor Fusion in the Presence of Fog", CVPR, 2020.
+5. J. Levinson and S. Thrun, "Automatic Online Calibration of Cameras and Lasers", RSS, 2013.
+
 ## Minimal perturbation examples
 
 An example script for running stand-alone perturbations is provided in `perturbation-drive/test_standalone_perturbations.py`
@@ -222,20 +251,20 @@ Clone this library from [GitHub](https://github.com/HannesLeonhard/PerturbationD
     gh repo clone ast-fortiss-tum/perturbation-drive.git
     ```
 
-Create a new virtual environment using Python >= 3.9 (although Python 3.9 is the preferred version). This can be done for example via [Micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html).
+Create a new virtual environment using Python >= 3.8 (Python 3.8 or 3.9 are recommended). This can be done for example via [Micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html).
 
 1. Install Micromamba.
 1b. Install virtualenv.
 2. Create a new environment
 
     ```Shell
-    micromamba create -n myenv python=3.9
+    micromamba create -n myenv python=3.8
     ```
     
     2b. Create a new environmnet
         
    ```Shell
-   python3.9 -m venv myenv
+    python3.8 -m venv myenv
    ```
     
 3. Activate the environment
@@ -306,4 +335,3 @@ Here is an example BibTeX entry:
   year = {2025}
 }
 ```
-
