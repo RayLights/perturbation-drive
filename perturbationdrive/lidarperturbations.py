@@ -4,18 +4,9 @@ from typing import Any, Optional, Callable, Dict, List
 
 # Import specific LiDAR functions
 from perturbationdrive.perturbationfuncs import (
-    lidar_point_dropout,
     lidar_inject_ghost_points,
     lidar_reduce_reflectivity,
     lidar_simulate_adverse_weather,
-    lidar_mc_motion_blur,
-    lidar_mc_spatial_misalignment,
-    lidar_mc_beam_reduction,
-    lidar_mc_random_dropout,
-    lidar_mc_simulate_fog,
-    lidar_mc_simulate_snow,
-    lidar_mc_simulate_snow_sweep,
-    fast_snow_perturbation,
     pts_motion,
     transform_points,
     reduce_LiDAR_beamsV2,
@@ -27,18 +18,9 @@ from perturbationdrive.perturbationfuncs import (
 
 # Mapping of configuration strings to actual function objects
 LIDAR_FUNCTION_MAPPING = {
-    "fast_snow_perturbation": fast_snow_perturbation,
-    "lidar_point_dropout": lidar_point_dropout,
     "lidar_inject_ghost_points": lidar_inject_ghost_points,
     "lidar_reduce_reflectivity": lidar_reduce_reflectivity,
     "lidar_simulate_adverse_weather": lidar_simulate_adverse_weather,
-    "lidar_mc_motion_blur": lidar_mc_motion_blur,
-    "lidar_mc_spatial_misalignment": lidar_mc_spatial_misalignment,
-    "lidar_mc_beam_reduction": lidar_mc_beam_reduction,
-    "lidar_mc_random_dropout": lidar_mc_random_dropout,
-    "lidar_mc_simulate_fog": lidar_mc_simulate_fog,
-    "lidar_mc_simulate_snow": lidar_mc_simulate_snow,
-    "lidar_mc_simulate_snow_sweep": lidar_mc_simulate_snow_sweep,
     "pts_motion": pts_motion,
     "transform_points": transform_points,
     "reduce_LiDAR_beamsV2": reduce_LiDAR_beamsV2,
