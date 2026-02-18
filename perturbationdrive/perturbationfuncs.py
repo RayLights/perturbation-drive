@@ -2496,7 +2496,7 @@ def estimate_laser_parameters(pointcloud_planes, calculated_indicent_angle, powe
     idx = np.where(min_vals > 5)
     min_vals = min_vals[idx]
     idx1 = [i + 1 for i in idx]
-    x = (xedges[idx] + xedges[idx1]) / 2
+    x = (xedges[tuple(idx)] + xedges[tuple(idx1)]) / 2
 
     if estimation_method == 'poly':
         pmin = ransac_polyfit(x, min_vals, order=2)
@@ -3639,11 +3639,17 @@ def temporal_alignment_noise(severity):
     return frame
 
 
+###### Approximation Methods for Fast Simulation of Weather Effects ######
+
 '''
 Fast Real-Time Rain Approximation
-Since both multiCorrupt and 3d_corruptions_ad's rain simulation are computationally expensive, we propose a fast approximation that captures the key effects of rain on LiDAR point clouds: attenuation (point dropout) and backscatter (ghost points). This method is designed for real-time applications and can be used as a quick way to simulate rain effects without the overhead of more complex physical models.
+Since both multiCorrupt and 3d_corruptions_ad's rain simulation are computationally expensive,
+we propose a fast approximation that captures the key effects of rain on LiDAR point clouds:
+attenuation (point dropout) and backscatter (ghost points).
+This method is designed for real-time applications and can be used as a quick way to simulate rain effects
+without the overhead of more complex physical models.
 '''
-def fast_rain_sim(severity, pointcloud):
+def fast_rain(severity, pointcloud):
     
     # 1. Define severity scales (0 to 4 mapping)
     # drop_rates: 5%, 10%, 15%, 20%, 30% of points disappear
@@ -3686,3 +3692,84 @@ def fast_rain_sim(severity, pointcloud):
     fast_rain_pc = np.vstack((pc_dropped, ghost_points))
     
     return fast_rain_pc
+
+def fast_fog(severity, points_np):
+    # Ensure severity stays strictly within 0 to 4
+    idx = max(0, min(int(severity), 4))
+    
+    # Define severity scales (Index 0 to 4)
+    # max_visible_ranges: At level 4, the LiDAR can only see 15 meters.
+    max_visible_ranges = [80.0, 60.0, 40.0, 25.0, 15.0]
+    # ghost_counts: Number of backscatter points injected near the sensor
+    ghost_counts = [200, 500, 1000, 2000, 3000]
+    
+    max_visible_range = max_visible_ranges[idx]
+    num_ghost_points = ghost_counts[idx]
+    
+    N = points_np.shape[0]
+    if N == 0:
+        return points_np
+    
+    # --- Step 1: Attenuation (Drop distant points) ---
+    distances = np.sqrt(points_np[:, 0]**2 + points_np[:, 1]**2 + points_np[:, 2]**2)
+    drop_probabilities = np.clip(distances / max_visible_range, 0.0, 1.0)
+    keep_mask = np.random.rand(N) > drop_probabilities
+    attenuated_points = points_np[keep_mask]
+    
+    # --- Step 2: Backscatter (Ghost points near car) ---
+    ghost_points = np.zeros((num_ghost_points, points_np.shape[1]), dtype=np.float32)
+    
+    # Fog backscatter happens very close to the ego-vehicle (-3m to +3m)
+    ghost_points[:, 0] = np.random.uniform(-3.0, 3.0, num_ghost_points) # X
+    ghost_points[:, 1] = np.random.uniform(-3.0, 3.0, num_ghost_points) # Y
+    ghost_points[:, 2] = np.random.uniform(-2.0, 2.0, num_ghost_points) # Z
+    
+    # Low intensity for fog
+    if ghost_points.shape[1] > 3:
+        ghost_points[:, 3] = np.random.uniform(0.0, 10.0, num_ghost_points)
+    if ghost_points.shape[1] > 4:
+        ghost_points[:, 4] = np.random.randint(0, 32, num_ghost_points)
+        
+    fast_fog_cloud = np.vstack((attenuated_points, ghost_points))
+    
+    return fast_fog_cloud
+
+
+def fast_snow(severity, points_np):
+    # Ensure severity stays strictly within 0 to 4
+    idx = max(0, min(int(severity), 4))
+    
+    # Define severity scales (Index 0 to 4)
+    # drop_rates: 2%, 5%, 10%, 15%, 20% random beam occlusion
+    drop_rates = [0.02, 0.05, 0.10, 0.15, 0.20]
+    # flake_counts: Number of highly reflective volumetric flakes
+    flake_counts = [500, 2000, 4000, 6000, 8000]
+    
+    drop_ratio = drop_rates[idx]
+    num_flakes = flake_counts[idx]
+    
+    N = points_np.shape[0]
+    if N == 0:
+        return points_np
+    
+    # --- Step 1: Beam Occlusion (Random Attenuation) ---
+    keep_mask = np.random.rand(N) > drop_ratio
+    attenuated_points = points_np[keep_mask]
+    
+    # --- Step 2: High-Intensity Ghost Flakes ---
+    ghost_flakes = np.zeros((num_flakes, points_np.shape[1]), dtype=np.float32)
+    
+    # Snowflakes fall everywhere (-40m to +40m around the car)
+    ghost_flakes[:, 0] = np.random.uniform(-40.0, 40.0, num_flakes) # X
+    ghost_flakes[:, 1] = np.random.uniform(-40.0, 40.0, num_flakes) # Y
+    ghost_flakes[:, 2] = np.random.uniform(-2.0, 10.0, num_flakes)  # Z (falling from sky)
+    
+    # High intensity for snow (highly reflective)
+    if ghost_flakes.shape[1] > 3:
+        ghost_flakes[:, 3] = np.random.uniform(50.0, 150.0, num_flakes)
+    if ghost_flakes.shape[1] > 4:
+        ghost_flakes[:, 4] = np.random.randint(0, 32, num_flakes)
+        
+    fast_snow_cloud = np.vstack((attenuated_points, ghost_flakes))
+    
+    return fast_snow_cloud

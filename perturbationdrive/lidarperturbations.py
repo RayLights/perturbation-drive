@@ -7,7 +7,7 @@ from .perturbationfuncs import (
     lidar_inject_ghost_points,
     lidar_reduce_reflectivity,
     lidar_simulate_adverse_weather,
-    
+
     pts_motion,
     transform_points,
     reduce_LiDAR_beamsV2,
@@ -29,7 +29,9 @@ from .perturbationfuncs import (
     fulltrajectory_noise,
     spatial_alignment_noise,
     temporal_alignment_noise,
-    fast_rain_sim
+    fast_rain,
+    fast_fog,
+    fast_snow
 )
 
 # Mapping of configuration strings to actual function objects
@@ -69,7 +71,9 @@ LIDAR_FUNCTION_MAPPING = {
     "spatial_alignment_noise": spatial_alignment_noise,
     "temporal_alignment_noise": temporal_alignment_noise,
 
-    "fast_rain_sim" :fast_rain_sim
+    "fast_rain" :fast_rain,
+    "fast_fog": fast_fog,
+    "fast_snow": fast_snow,
 }
 
 class LidarPerturbation:
