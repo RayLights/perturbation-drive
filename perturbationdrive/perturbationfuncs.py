@@ -3103,7 +3103,7 @@ def simulate_snow(severity: int,
                   noise_floor: float=0.7,
                   root_path: str=None) -> np.ndarray:
     """
-    :param severity:                Integer 1-5
+    :param severity:                Integer 1-3
     :param pc:                      N-by-5 array containing original pointcloud (x, y, z, intensity, channel).
     :param label:                   Semantic labels.
     :param beam_divergence:         Beam divergence in degrees.
@@ -3170,9 +3170,7 @@ def simulate_snow(severity: int,
     s_vals = [
         (0.5, 1.2),  
         (2.5, 1.6),  
-        (2.5, 1.6),  
-        (1.5, 0.4),  
-        (1.5, 0.4)   
+        (1.5, 0.4), 
     ]
     
     s = s_vals[severity - 1]
@@ -3228,7 +3226,7 @@ def simulate_snow_sweep(severity: int,
                         noise_floor: float=0.7,
                         root_path: str=None) -> np.ndarray:
     """
-    :param severity:                Integer 1-5
+    :param severity:                Integer 1-3
     :param pc:                      N-by-5 array containing original pointcloud (x, y, z, intensity, channel).
     :param beam_divergence:         Beam divergence in degrees.
     :param shuffle:                 Flag if order of sampled snowflakes should be shuffled.
@@ -3285,11 +3283,9 @@ def simulate_snow_sweep(severity: int,
 
     # Mapping 5 severity levels (Same logic as simulate_snow)
     s_vals = [
-        (0.5, 1.2),  
-        (2.5, 1.6),  
-        (2.5, 1.6),  
-        (1.5, 0.4),  
-        (1.5, 0.4)   
+        (0.5, 1.2),
+        (2.5, 1.6),
+        (1.5, 0.4),
     ]
     s = s_vals[severity - 1]
 
