@@ -1898,7 +1898,9 @@ def lidar_simulate_adverse_weather(
     return weather_pc
 
 # ===============================================
-#        LIDAR (MultiCorrupt-style)              
+#        LIDAR (MultiCorrupt) 
+#       Combined perturbations for multi-corruption scenarios
+#       https://github.com/ika-rwth-aachen/MultiCorrupt/tree/main             
 # ===============================================
 _FOG_LOOKUP_DIR = os.path.join(os.path.dirname(__file__), "utils", "fog_lookup_tables")
 _SNOW_NPY_DIR = os.path.join(os.path.dirname(__file__), "utils", "npy")
@@ -1913,9 +1915,7 @@ RNG = np.random.default_rng(seed)
 
 """ motion blur """
 def pts_motion(severity, points):
-    # Mapping 5 severity levels to the original range of [0.06 ... 0.13]
-    # Level 1: 0.06, Level 3: 0.1, Level 5: 0.13
-    s_vals = [0.06, 0.08, 0.1, 0.115, 0.13]
+    s_vals = [0.06,  0.1, 0.13]
     s = s_vals[severity - 1]
     
     trans_std = [s, s, s]
@@ -1936,7 +1936,6 @@ def pts_motion(severity, points):
     points[:, 2] += jitters_z
     return points
 
-
 """ spatial misalignment """
 def transform_points(severity, points):
     """
@@ -1949,9 +1948,9 @@ def transform_points(severity, points):
     Returns:
     numpy.ndarray: The transformed points.
     """
-    # Mapping 5 severity levels. 
+    # Mapping 3 severity levels. 
     # Format: (probability, degrees)
-    s_vals = [(0.2, 1), (0.3, 1.5), (0.4, 2), (0.5, 2.5), (0.6, 3)]
+    s_vals = [(0.2, 1),  (0.4, 2),  (0.6, 3)]
     s = s_vals[severity - 1]
     
     
@@ -2013,68 +2012,35 @@ def transform_points(severity, points):
 
 """ beam reduce """
 def reduce_LiDAR_beamsV2(severity, pts):
-    # Mapping 5 levels: 1=Less severe (32 beams), 5=Most severe (4 beams)
-    # Assuming standard 64 beam lidar? Or 32?
-    # Logic: 1 -> 32 beams (Keep every 2nd)
-    #        2 -> 16 beams (Keep every 4th)
-    #        3 -> 12 beams 
-    #        4 -> 8 beams
-    #        5 -> 4 beams
+    s = [16, 8, 4][severity - 1]
     
-    # Note: The original code had [16, 8, 4] for levels 1,2,3.
-    # To map to 5 levels, we interpolate.
-    
-    s_vals = [32, 16, 12, 8, 4]
-    s = s_vals[severity - 1]
-    
-    allowed_beams = []
-    
-    if s == 32:
-        # Keep odd beams up to 64
-        allowed_beams = list(range(1, 64, 2))
-    elif s == 16:
-        # Original level 1 behavior
+    if s == 16:
         allowed_beams = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]
-    elif s == 12:
-         allowed_beams = [1, 5, 9, 11, 13, 17, 21, 23, 25, 29, 33, 37]
     elif s == 8:
-        # Original level 2 behavior
         allowed_beams = [1, 5, 9, 13, 17, 21, 25, 29]
     elif s == 4:
-        # Original level 3 behavior
         allowed_beams = [1, 9, 17, 25]
     
     mask = np.full(pts.shape[0], False)
-    
-    # Check if beams exist in dataset, otherwise this might return empty
-    # Assuming channel info is in column 4 (index 4)
-    if pts.shape[0] > 0:
-        for beam in allowed_beams:
-            beam_mask = pts[:, 4] == beam
-            mask = np.logical_or(beam_mask, mask)
-        return pts[mask, :]
-    return pts
+    for beam in allowed_beams:
+        beam_mask = pts[:, 4] == beam
+        mask = np.logical_or(beam_mask, mask)
+    return pts[mask, :]
 
 
 """ points missing """
-def pointsreducing(severity, pts):
+def pointsreducing( severity,pts):
     """
     Simulates missing lidar points based on a given severity level.
 
     Args:
-    severity: An integer between 1 and 5.
     pts: A numpy array of lidar points.
+    severity: An integer between 1 and 3, where 1 is the least severe and 3 is the most severe.
 
     Returns:
     A numpy array of lidar points with missing points.
     """
-    # Original: [70, 80, 90] for percentage dropped? 
-    # Code says: (100 - s) / 100 is KEPT.
-    # So s=70 means keep 30%. s=90 means keep 10%.
-    # Let's map 1-5 from "Mildly missing" to "Mostly missing"
-    
-    s_vals = [50, 60, 70, 80, 90]
-    s = s_vals[severity - 1]
+    s = [70, 80, 90][severity - 1]
 
     size = pts.shape[0]
     nr_of_samps = int(round(size * ((100 - s) / 100)))  # Calculate number of points to keep
@@ -2325,12 +2291,8 @@ def P_R_fog_soft(p: ParameterSet, pc: np.ndarray, original_intesity: np.ndarray,
 
 def simulate_fog(severity, pc: np.ndarray, noise: int=0, gain: bool = False, noise_variant: str = 'v1',
                  hard: bool = True, soft: bool = True) -> Tuple[np.ndarray, np.ndarray, Dict]:
-    
-    # 5 levels of severity mapping
     s_vals = [
         (0.02, 0.008),
-        (0.02, 0.008), 
-        (0.03, 0.008), 
         (0.03, 0.008),
         (0.06, 0.05)   
     ]
