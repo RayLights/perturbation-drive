@@ -4,13 +4,13 @@ import os
 import itertools
 import skimage.exposure
 import copy
-from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
-from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.raindrop import Raindrop
+from .AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
+from .AttentionMasks.raindrops_generator.raindrop.raindrop import Raindrop
 import random
 import inspect
 
-from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.config import cfg
-from perturbationdrive.perturbationfuncs import (
+from .AttentionMasks.raindrops_generator.raindrop.config import cfg
+from .perturbationfuncs import (
     gaussian_noise,
     poisson_noise,
     impulse_noise,
@@ -74,7 +74,7 @@ from perturbationdrive.perturbationfuncs import (
     static_smoke_filter,
     static_object_overlay,
 )
-from perturbationdrive.RoadGenerator.RoadGenerator import RoadGenerator
+from .RoadGenerator.RoadGenerator import RoadGenerator
 from .utils.data_utils import CircularBuffer
 from .utils.logger import CSVLogHandler
 from .utils.timeout import timeout_func

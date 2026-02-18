@@ -14,9 +14,10 @@ from pathlib import Path
 from copy import deepcopy
 import itertools
 from io import BytesIO
+
 from typing import Optional, Tuple, List, Dict, Any
-from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
-from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.config import cfg
+from .AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
+from .AttentionMasks.raindrops_generator.raindrop.config import cfg
 from .kernels.kernels import (
     diamond_square,
     create_disk_kernel,

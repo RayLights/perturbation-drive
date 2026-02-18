@@ -3,7 +3,7 @@ import inspect
 from typing import Any, Optional, Callable, Dict, List
 
 # Import specific LiDAR functions
-from perturbationdrive.perturbationfuncs import (
+from .perturbationfuncs import (
     lidar_inject_ghost_points,
     lidar_reduce_reflectivity,
     lidar_simulate_adverse_weather,

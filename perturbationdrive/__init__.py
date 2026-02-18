@@ -1,15 +1,15 @@
-from perturbationdrive.imageperturbations import (
+from .imageperturbations import (
     ImagePerturbation,
 )
-from perturbationdrive.lidarperturbations import(
+from .lidarperturbations import(
     LidarPerturbation,
 )
 
-from perturbationdrive.RoadGenerator import (
+from .RoadGenerator import (
     RoadGenerator,
 )
 
-from perturbationdrive.perturbationfuncs import (
+from .perturbationfuncs import (
     gaussian_noise,
     poisson_noise,
     impulse_noise,
