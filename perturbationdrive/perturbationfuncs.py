@@ -3346,3 +3346,343 @@ def xsi(R: float, R_1: float = 0.9, R_2: float = 1.0) -> float:
         b = 0 - (m * R_1)
         y = m * R + b
         return y
+
+############################ 3D_Corruptions_AD ##############################
+#               https://github.com/thu-ml/3D_Corruptions_AD 
+#               We adapted the code from 3D_Corruptions_AD for our use case.
+#               We made some modifications to the code to fit our use case, such as changing the input and output formats, and removing some functionalities that are not relevant to our use case.
+######################################################################################
+
+# Weather Corruptions
+
+'''
+Rain
+'''
+def rain_sim(severity, pointcloud   ):
+    from .utils import lisa
+    rain_sim = lisa.LISA(show_progressbar=True)
+    c = [0.20, 0.73, 1.5625, 3.125, 7.29, 10.42][severity-1]
+    
+    # Enforce KITTI format (N x 4) to prevent LISA shape broadcasting crashes
+    pc_4 = pointcloud[:, :4] if pointcloud.shape[1] > 4 else pointcloud
+    
+    points = rain_sim.augment(pc_4, c)
+    return points
+
+'''
+Snow
+'''
+def snow_sim(severity, pointcloud):
+    from .utils import lisa
+    from .utils.wet_ground.augmentation import ground_water_augmentation
+    snow_sim = lisa.LISA(mode='gunn', show_progressbar=True) 
+    c = [0.20, 0.73, 1.5625, 3.125, 7.29, 10.42][severity-1]
+    
+    # Enforce KITTI format (N x 4) to prevent LISA shape broadcasting crashes
+    pc_4 = pointcloud[:, :4] if pointcloud.shape[1] > 4 else pointcloud
+    
+    points = snow_sim.augment(pc_4, c)
+    return points
+
+'''
+Fog
+'''
+def fog_sim(severity, pointcloud):
+    from .utils.fog_sim import simulate_fog
+    from .utils.fog_sim import ParameterSet
+    c = [0.005, 0.01, 0.02, 0.03, 0.06][severity-1] # form original paper
+    parameter_set = ParameterSet(alpha=c, gamma=0.000001)
+    points, _, _ = simulate_fog(parameter_set, pointcloud, 1)
+    return points
+
+'''
+Sunlight
+'''
+def scene_glare_noise(severity, pointcloud):
+    N, C = pointcloud.shape
+    c = [int(0.010*N), int(0.020*N),int(0.030*N),int(0.040*N), int(0.050*N)][severity-1]
+    index = np.random.choice(N, c, replace=False)
+    pointcloud[index] += np.random.normal(size=(c, C)) * 2.0
+    return pointcloud
+
+# Sensor Corruptions
+
+
+'''
+Crosstalk
+'''
+def lidar_crosstalk_noise(severity, pointcloud):
+    N, C = pointcloud.shape
+    c = [int(0.004*N), int(0.008*N),int(0.012*N),int(0.016*N), int(0.020*N)][severity-1]
+    index = np.random.choice(N, c, replace=False)
+    pointcloud[index] += np.random.normal(size=(c, C)) * 3.0
+    return pointcloud
+
+
+'''
+Density
+'''
+def density_dec_global(severity, pointcloud):
+    N, C = pointcloud.shape
+    num = int(N * 0.3)
+    c = [int(0.2*num), int(0.4*num), int(0.6*num), int(0.8*num), num][severity - 1]
+    idx = np.random.choice(N, c, replace=False)
+    pointcloud = np.delete(pointcloud, idx, axis=0)
+    return pointcloud
+
+'''
+Cutout
+'''
+def cutout_local(severity, pointcloud):
+    N, C = pointcloud.shape
+    num = int(N*0.02)
+    c = [(2,num), (3,num), (5,num), (7,num), (10,num)][severity-1]
+    for _ in range(c[0]):
+        i = np.random.choice(pointcloud.shape[0],1)
+        picked = pointcloud[i]
+        dist = np.sum((pointcloud - picked)**2, axis=1, keepdims=True)
+        idx = np.argpartition(dist, c[1], axis=0)[:c[1]]
+        pointcloud = np.delete(pointcloud, idx.squeeze(), axis=0)
+    return pointcloud
+
+
+'''
+Gaussian (L)
+'''
+def gaussian_noise(severity, pointcloud):
+    N, C = pointcloud.shape # N*3
+    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity-1]
+    jitter = np.random.normal(size=(N, C)) * c
+    new_pc = (pointcloud + jitter).astype('float32')
+    return new_pc
+
+'''
+Uniform (L)
+'''
+def uniform_noise(severity, pointcloud):
+    # TODO
+    N, C = pointcloud.shape
+    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity - 1]
+    jitter = np.random.uniform(-c, c, (N, C))
+    new_pc = (pointcloud + jitter).astype('float32')
+    return new_pc
+
+'''
+Impulse (L)
+'''
+
+def impulse_noise(severity, pointcloud):
+    N, C = pointcloud.shape
+    c = [N // 30, N // 25, N // 20, N // 15, N // 10][severity - 1]
+    index = np.random.choice(N, c, replace=False)
+    pointcloud[index] += np.random.choice([-1, 1], size=(c, C)) * 0.1
+    return pointcloud
+
+'''
+Fov lost
+'''
+
+def fov_filter(severity, pointcloud):
+
+    angle1 = [-105, -90, -75, -60, -45][severity-1]
+    angle2 = [105, 90, 75, 60, 45][severity-1]
+    if isinstance(pointcloud, np.ndarray):
+        pts_npy = pointcloud
+    elif isinstance(pointcloud, BasePoints):
+        pts_npy = pointcloud.tensor.numpy()
+    else:
+        raise NotImplementedError
+    pts_p = (np.arctan(pts_npy[:, 0] / pts_npy[:, 1]) + (
+                pts_npy[:, 1] < 0) * np.pi + np.pi * 2) % (np.pi * 2)
+    pts_p[pts_p > np.pi] -= np.pi * 2
+    pts_p = pts_p / np.pi * 180
+    assert np.all(-180 <= pts_p) and np.all(pts_p <= 180)
+    filt = np.logical_and(pts_p >= angle1, pts_p <= angle2)
+
+    return pointcloud[filt]
+
+
+
+# Motion corruptions
+
+'''
+Moving Obj. 
+'''
+def moving_noise_bbox(severity, pointcloud, bbox):
+    cor = 'move_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+'''
+Motion Compensation
+'''
+def fulltrajectory_noise(severity, pointcloud, pc_pose):
+    from .utils.lidar_split import lidar_split, reconstruct_pc
+    ct = [0.02, 0.04, 0.06, 0.08, 0.10][severity-1]
+    cr = [0.002, 0.004, 0.006, 0.008, 0.010][severity-1]
+    new_pose_list, new_lidar_list = lidar_split(pointcloud, pc_pose)
+    r_noise = np.random.normal(size=(100, 3, 3)) * cr
+    t_noise = np.random.normal(size=(100, 3)) * ct
+    new_pose_list[:, :3, :3] += r_noise
+    new_pose_list[:, :3, 3] += t_noise
+    f_pc = reconstruct_pc(new_lidar_list, new_pose_list)
+    return f_pc
+
+
+
+
+# Object corruptions
+
+'''
+Local Density
+'''
+
+def density_dec_bbox(severity, pointcloud, bbox):
+    cor = 'density_dec_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+'''
+Local Cutout
+'''
+def cutout_bbox(severity, pointcloud, bbox):
+    cor = 'cutout_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+
+'''
+Local Gaussian
+'''
+def gaussian_noise_bbox(severity, pointcloud, bbox):
+    cor = 'gaussian_noise_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+'''
+Local Uniform
+'''
+
+def uniform_noise_bbox(severity, pointcloud, bbox):
+    cor = 'uniform_noise_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+'''
+Local Impulse
+'''
+
+def impulse_noise_bbox(severity, pointcloud, bbox):
+    cor = 'impulse_noise_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+'''
+Scale
+'''
+def scale_bbox(severity, pointcloud, bbox):
+    cor = 'scale_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+'''
+Shear
+'''
+def shear_bbox(severity, pointcloud, bbox):
+    cor = 'shear_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+'''
+Rotation
+'''
+def rotation_bbox(severity, pointcloud, bbox):
+    cor = 'rotation_bbox'
+    from .utils import bbox_util
+    pointcloud = bbox_util.pick_bbox(cor,severity,bbox,pointcloud)
+    return pointcloud
+
+
+# Alignment
+
+'''
+Spatial
+'''
+
+def spatial_alignment_noise(severity, ori_pose):
+    '''
+    input: ori_pose 4*4
+    output: noise_pose 4*4
+    '''
+    ct = [0.02, 0.04, 0.06, 0.08, 0.10][severity-1]*2
+    cr = [0.002, 0.004, 0.006, 0.008, 0.010][severity-1]*2
+    r_noise = np.random.normal(size=(3, 3)) * cr
+    t_noise = np.random.normal(size=(3)) * ct
+    ori_pose[:3, :3] += r_noise
+    ori_pose[:3, 3] += t_noise
+    return ori_pose
+
+
+'''
+Temporal
+'''
+def temporal_alignment_noise(severity):
+    frame = [2, 4, 6, 8, 10][severity-1]
+    return frame
+
+
+'''
+Fast Real-Time Rain Approximation
+Since both multiCorrupt and 3d_corruptions_ad's rain simulation are computationally expensive, we propose a fast approximation that captures the key effects of rain on LiDAR point clouds: attenuation (point dropout) and backscatter (ghost points). This method is designed for real-time applications and can be used as a quick way to simulate rain effects without the overhead of more complex physical models.
+'''
+def fast_rain_sim(severity, pointcloud):
+    
+    # 1. Define severity scales (0 to 4 mapping)
+    # drop_rates: 5%, 10%, 15%, 20%, 30% of points disappear
+    drop_rates = [0.05, 0.10, 0.15, 0.20, 0.30]
+    # ghost_rates: add 1%, 2%, 5%, 8%, 12% backscatter noise near the sensor
+    ghost_rates = [0.01, 0.02, 0.05, 0.08, 0.12]
+    
+    drop_rate = drop_rates[severity - 1]
+    ghost_rate = ghost_rates[severity - 1]
+    
+    N = pointcloud.shape[0]
+    
+    # --- Step 1: Attenuation (Fast Point Dropout) ---
+    # Create a random mask to keep points
+    keep_mask = np.random.rand(N) > drop_rate
+    pc_dropped = pointcloud[keep_mask]
+    
+    # --- Step 2: Backscatter (Fast Ghost Points) ---
+    num_ghosts = int(N * ghost_rate)
+    ghost_points = np.zeros((num_ghosts, pointcloud.shape[1]), dtype=np.float32)
+    
+    # Generate random points within a sphere of radius R (mostly close to sensor, e.g., 0.5m to 4.0m)
+    r = np.random.uniform(0.5, 4.0, num_ghosts)
+    theta = np.random.uniform(0, 2 * np.pi, num_ghosts)
+    
+    # Convert polar to Cartesian (X, Y)
+    ghost_points[:, 0] = r * np.cos(theta) # X
+    ghost_points[:, 1] = r * np.sin(theta) # Y
+    # Z usually stays within the vertical spread of the sensor (-2m to 2m)
+    ghost_points[:, 2] = np.random.uniform(-2.0, 2.0, num_ghosts)
+    
+    # Rain backscatter has very low intensity (if intensity column exists)
+    if ghost_points.shape[1] > 3:
+        ghost_points[:, 3] = np.random.uniform(0, 15, num_ghosts) 
+    # Match the ring column if it exists (arbitrary ring assignment)
+    if ghost_points.shape[1] > 4:
+        ghost_points[:, 4] = np.random.randint(0, 32, num_ghosts)
+        
+    # Combine the surviving points with the ghost points
+    fast_rain_pc = np.vstack((pc_dropped, ghost_points))
+    
+    return fast_rain_pc

@@ -7,6 +7,7 @@ from .perturbationfuncs import (
     lidar_inject_ghost_points,
     lidar_reduce_reflectivity,
     lidar_simulate_adverse_weather,
+    
     pts_motion,
     transform_points,
     reduce_LiDAR_beamsV2,
@@ -14,6 +15,21 @@ from .perturbationfuncs import (
     simulate_snow_sweep, # ransac for ground truth
     simulate_snow, # needs ground truth labels
     simulate_fog,
+    rain_sim,
+    snow_sim,
+    fog_sim,
+    scene_glare_noise,
+    lidar_crosstalk_noise,
+    density_dec_global,
+    cutout_local,
+    gaussian_noise,
+    uniform_noise,
+    impulse_noise,
+    fov_filter,
+    fulltrajectory_noise,
+    spatial_alignment_noise,
+    temporal_alignment_noise,
+    fast_rain_sim
 )
 
 # Mapping of configuration strings to actual function objects
@@ -21,6 +37,8 @@ LIDAR_FUNCTION_MAPPING = {
     "lidar_inject_ghost_points": lidar_inject_ghost_points,
     "lidar_reduce_reflectivity": lidar_reduce_reflectivity,
     "lidar_simulate_adverse_weather": lidar_simulate_adverse_weather,
+
+    # ---- MultiCorrupt ----
     "pts_motion": pts_motion,
     "transform_points": transform_points,
     "reduce_LiDAR_beamsV2": reduce_LiDAR_beamsV2,
@@ -28,6 +46,30 @@ LIDAR_FUNCTION_MAPPING = {
     "simulate_snow_sweep": simulate_snow_sweep,
     "simulate_snow": simulate_snow,
     "simulate_fog": simulate_fog,
+
+    # --- 3D_Corruptions_AD: Weather ---
+    "rain_sim": rain_sim,
+    "snow_sim": snow_sim,
+    "fog_sim": fog_sim,
+    "scene_glare_noise": scene_glare_noise,
+
+    # --- 3D_Corruptions_AD: Sensor Corruptions ---
+    "lidar_crosstalk_noise": lidar_crosstalk_noise,
+    "density_dec_global": density_dec_global,
+    "cutout_local": cutout_local,
+    "gaussian_noise": gaussian_noise,
+    "uniform_noise": uniform_noise,
+    "impulse_noise": impulse_noise,
+    "fov_filter": fov_filter,
+
+    # --- 3D_Corruptions_AD: Motion Corruptions ---
+    "fulltrajectory_noise": fulltrajectory_noise,
+
+    # --- 3D_Corruptions_AD: Alignment Corruptions ---
+    "spatial_alignment_noise": spatial_alignment_noise,
+    "temporal_alignment_noise": temporal_alignment_noise,
+
+    "fast_rain_sim" :fast_rain_sim
 }
 
 class LidarPerturbation:
