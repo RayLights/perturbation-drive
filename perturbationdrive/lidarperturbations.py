@@ -4,7 +4,7 @@ from typing import Any, Optional, Callable, Dict, List
 
 # Import specific LiDAR functions
 from .perturbationfuncs import (
-    lidar_inject_ghost_points,
+     lidar_inject_ghost_points,
     lidar_reduce_reflectivity,
     lidar_simulate_adverse_weather,
 
@@ -22,10 +22,19 @@ from .perturbationfuncs import (
     lidar_crosstalk_noise,
     density_dec_global,
     cutout_local,
-    gaussian_noise,
+    gaussian_noise_lidar,
     uniform_noise,
-    impulse_noise,
+    impulse_noise_lidar,
     fov_filter,
+    moving_noise_bbox,
+    density_dec_bbox,
+    cutout_bbox,
+    gaussian_noise_bbox,
+    uniform_noise_bbox,
+    impulse_noise_bbox,
+ 	shear_bbox,
+ 	scale_bbox,
+ 	rotation_bbox,
     fulltrajectory_noise,
     spatial_alignment_noise,
     temporal_alignment_noise,
@@ -34,7 +43,7 @@ from .perturbationfuncs import (
     fast_snow
 )
 
-# Mapping of configuration strings to actual function objects
+#  Mapping of configuration strings to actual function objects
 LIDAR_FUNCTION_MAPPING = {
     "lidar_inject_ghost_points": lidar_inject_ghost_points,
     "lidar_reduce_reflectivity": lidar_reduce_reflectivity,
@@ -59,13 +68,24 @@ LIDAR_FUNCTION_MAPPING = {
     "lidar_crosstalk_noise": lidar_crosstalk_noise,
     "density_dec_global": density_dec_global,
     "cutout_local": cutout_local,
-    "gaussian_noise": gaussian_noise,
+    "gaussian_noise_lidar": gaussian_noise_lidar,
     "uniform_noise": uniform_noise,
-    "impulse_noise": impulse_noise,
+    "impulse_noise_lidar": impulse_noise_lidar,
     "fov_filter": fov_filter,
+
+    #--- 3D_Corruptions_AD: Local object Corruoptions---# 
+    "density_dec_bbox":density_dec_bbox,
+    "cutout_bbox":cutout_bbox,
+    "gaussian_noise_bbox":gaussian_noise_bbox,
+    "uniform_noise_bbox":uniform_noise_bbox,
+    "impulse_noise_bbox":impulse_noise_bbox,
+ 	"shear_bbox":shear_bbox,
+ 	"scale_bbox":scale_bbox,
+ 	"rotation_bbox":rotation_bbox,
 
     # --- 3D_Corruptions_AD: Motion Corruptions ---
     "fulltrajectory_noise": fulltrajectory_noise,
+    "moving_noise_bbox" : moving_noise_bbox,
 
     # --- 3D_Corruptions_AD: Alignment Corruptions ---
     "spatial_alignment_noise": spatial_alignment_noise,
@@ -86,6 +106,7 @@ class LidarPerturbation:
         self,
         funcs: Optional[List[str]] = None,
         rng: Optional[np.random.Generator] = None,
+        
     ) -> None:
         """
         Initialize the LiDAR perturbation controller.
