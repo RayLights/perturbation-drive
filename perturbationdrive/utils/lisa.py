@@ -198,8 +198,8 @@ def monte_carlo_lisa(x: float, y: float, z: float, i: float, Rr: int, fixed_seed
 
 class LISA:
 
-    def __init__(self, wavelength: float = 905, r_min: float = 0.9, r_max: float = 120, beam_divergence: float = 3e-3,
-                 min_diameter: float = 0.05, range_accuracy: float = 0.09, signal: str = 'strongest',
+    def __init__(self, wavelength: float = 905, r_min: float = 0.9, r_max: float = 100, beam_divergence: float = 2.2e-3,
+                 min_diameter: float = 0.05, range_accuracy: float = 0.03, signal: str = 'strongest',
                  mode: str = 'rain', show_progressbar: bool = False) -> None:
         """
         refractive_index    : refractive index of the droplets
