@@ -6,7 +6,7 @@ from PIL import ImageDraw
 from scipy.ndimage import gaussian_filter
 import random
 from random import randint
-from perturbationdrive.AttentionMasks.raindrops_generator.raindrop.config import cfg
+from .config import cfg
 
 """
 This module contains a description of Raindrop class

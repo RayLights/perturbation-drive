@@ -1,6 +1,8 @@
-import copy 
 import numpy as np
 import cv2
+from io import BytesIO
+from .AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
+from .AttentionMasks.raindrops_generator.raindrop.config import cfg
 import yaml 
 import os 
 import math 
@@ -14,10 +16,9 @@ from pathlib import Path
 from copy import deepcopy
 import itertools
 from io import BytesIO
-
 from typing import Optional, Tuple, List, Dict, Any
-from .AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
-from .AttentionMasks.raindrops_generator.raindrop.config import cfg
+
+import copy 
 from .kernels.kernels import (
     diamond_square,
     create_disk_kernel,
@@ -192,6 +193,25 @@ def increase_brightness(scale, image):
     Returns: numpy array:
     """
     factor = [1.1, 1.2, 1.3, 1.5, 1.7][scale]
+    # Convert the image to HSV color space
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    # Adjust the V channel
+    hsv_image[:, :, 2] = np.clip(hsv_image[:, :, 2] * factor, 0, 255)
+    # Convert the image back to RGB color space
+    brightened_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)
+    return brightened_image
+
+def decrease_brightness(scale, image):
+    """
+    Decrease the brightness of the image using HSV color space
+
+    Parameters:
+        - img (numpy array): The input image.
+        - scale int: The severity of the perturbation on a scale from 0 to 4
+
+    Returns: numpy array:
+    """
+    factor = [0.9, 0.8, 0.7, 0.5, 0.3][scale]
     # Convert the image to HSV color space
     hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
     # Adjust the V channel
@@ -1046,7 +1066,8 @@ def frost_filter(scale, image):
     Returns: numpy array:
     """
     intensity = [0.15, 0.19, 0.25, 0.32, 0.4][scale]
-    frost_image_path = "./perturbationdrive/OverlayImages/frostImg.png"
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    frost_image_path = f"{base_path}/OverlayImages/frostImg.png"
     # Load the frost overlay image
     frost_overlay = cv2.imread(frost_image_path, cv2.IMREAD_UNCHANGED)
     assert (
@@ -1080,7 +1101,8 @@ def snow_filter(scale, image):
     Returns: numpy array:
     """
     intensity = [0.15, 0.22, 0.3, 0.45, 0.6][scale]
-    frost_image_path = "./perturbationdrive/OverlayImages/snow.png"
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    frost_image_path = f"{base_path}/OverlayImages/snow.png"
     # Load the frost overlay image
     frost_overlay = cv2.imread(frost_image_path, cv2.IMREAD_UNCHANGED)
     assert (
@@ -1250,7 +1272,7 @@ def static_rain_filter(scale, image, rain_overlay):
     return image
 
 
-def new_rain_filter(scale, image):
+def procedural_rain_static(scale, image):
     """
     Generate procedural raindrops on the input image using the raindrops_generator.
 
@@ -1266,7 +1288,7 @@ def new_rain_filter(scale, image):
         raise ValueError("Scale must be within [0, 4].")
 
     h, w = image.shape[:2]
-
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     # Derive a local config from the base cfg without mutating the global one
     local_cfg = copy.deepcopy(cfg)
 
@@ -1289,12 +1311,14 @@ def new_rain_filter(scale, image):
 
     # Generate drops and render them onto the image
     drops, _, _ = generate_label(h, w, local_cfg)
-    output = generateDrops(image, local_cfg, drops)
+    output = generateDrops(image_rgb, local_cfg, drops)
+    ### UPDATED conversion 
+    final_bgr = cv2.cvtColor(np.asarray(output, dtype=np.uint8), cv2.COLOR_RGB2BGR)
 
-    return np.asarray(output, dtype=np.uint8)
+    return final_bgr
 
 
-def new_dynamic_rain_filter(scale, image):
+def procedural_rain_dynamic(scale, image):
     """
     Generate dynamic (frame-varying) raindrops using the raindrops_generator.
 
@@ -1315,8 +1339,8 @@ def new_dynamic_rain_filter(scale, image):
     local_cfg = copy.deepcopy(cfg)
 
     # Dynamic severity schedules
-    drop_scales = [0.5, 0.8, 1.1, 1.5, 2.0]
-    radius_scales = [0.55, 0.8, 1.0, 1.2, 1.35]
+    drop_scales = [0.4, 0.7, 1.0, 1.3, 1.7]
+    radius_scales = [0.6, 0.8, 1.0, 1.2, 1.35]
     edge_darkratio = [0.85, 0.75, 0.65, 0.6, 0.55][scale]
     streak_lengths = [0, 2, 4, 6, 8]  # motion blur length per drop
 
@@ -1341,12 +1365,12 @@ def new_dynamic_rain_filter(scale, image):
 
     output = generateDrops(image, local_cfg, drops)
     return np.asarray(output, dtype=np.uint8)
-
 # check maps
 
 def object_overlay(scale, img1):
     c = [10, 5, 3, 2, 1.5]
-    overlay_path = "./perturbationdrive/OverlayImages/Logo_of_the_Technical_University_of_Munichpng.png"
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    overlay_path = f"{base_path}/OverlayImages/Logo_of_the_Technical_University_of_Munichpng.png"
     img2 = cv2.imread(overlay_path)
     assert img2 is not None, "file could not be read, check with os.path.exists()"
     img1_shape0_div_c_scale = int(img1.shape[0] / c[scale])
@@ -1754,6 +1778,7 @@ def shift_color(image, source_color, target_color):
 
     return shifted_image
 
+
 # ===============================================
 #                LIDAR                           
 # ===============================================
@@ -1898,9 +1923,9 @@ def lidar_simulate_adverse_weather(
     return weather_pc
 
 # ===============================================
-#        LIDAR (MultiCorrupt) 
-#       Combined perturbations for multi-corruption scenarios
-#       https://github.com/ika-rwth-aachen/MultiCorrupt/tree/main             
+#        LIDAR (MultiCorrupt-style)      
+# #      Combined perturbations for multi-corruption scenarios
+#       https://github.com/ika-rwth-aachen/MultiCorrupt/tree/main            
 # ===============================================
 _FOG_LOOKUP_DIR = os.path.join(os.path.dirname(__file__), "utils", "fog_lookup_tables")
 _SNOW_NPY_DIR = os.path.join(os.path.dirname(__file__), "utils", "npy")
@@ -1915,8 +1940,11 @@ RNG = np.random.default_rng(seed)
 
 """ motion blur """
 def pts_motion(severity, points):
+    # Mapping 5 severity levels 
+    # Level 1: 0.06, Level 3: 0.1, Level 5: 0.13
     s_vals = [0.06,  0.1, 0.13]
-    s = s_vals[severity - 1]
+    safe_severity = min(severity, 2)
+    s = s_vals[safe_severity]
     
     trans_std = [s, s, s]
     noise_translate = np.array([
@@ -1936,22 +1964,24 @@ def pts_motion(severity, points):
     points[:, 2] += jitters_z
     return points
 
+
 """ spatial misalignment """
 def transform_points(severity, points):
     """
     Rotate and translate a set of points.
     
     Parameters:
-    severity (int): Severity level (1-5)
+    severity (int): Severity level (1-3)
     points (numpy.ndarray): A 2D array where each row represents a point (x, y, z, ...).
     
     Returns:
     numpy.ndarray: The transformed points.
     """
-    # Mapping 3 severity levels. 
+    # Mapping 5 severity levels. 
     # Format: (probability, degrees)
     s_vals = [(0.2, 1),  (0.4, 2),  (0.6, 3)]
-    s = s_vals[severity - 1]
+    safe_severity = min(severity, 2)
+    s = s_vals[safe_severity]
     
     
     # Convert the angle from degrees to radians
@@ -2012,16 +2042,26 @@ def transform_points(severity, points):
 
 """ beam reduce """
 def reduce_LiDAR_beamsV2(severity, pts):
-    s = [16, 8, 4][severity - 1]
+    # Mapping 3 levels: 1=Less severe (16 beams), 3=Most severe (4 beams)
+    
+    s_vals = [16, 8, 4]
+    safe_severity = min(severity, 2)
+    s = s_vals[safe_severity]
+    
+    allowed_beams = []
     
     if s == 16:
+        #  level 1 behavior
         allowed_beams = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]
     elif s == 8:
+        #  level 2 behavior
         allowed_beams = [1, 5, 9, 13, 17, 21, 25, 29]
     elif s == 4:
+        #  level 3 behavior
         allowed_beams = [1, 9, 17, 25]
     
     mask = np.full(pts.shape[0], False)
+    
     for beam in allowed_beams:
         beam_mask = pts[:, 4] == beam
         mask = np.logical_or(beam_mask, mask)
@@ -2029,18 +2069,21 @@ def reduce_LiDAR_beamsV2(severity, pts):
 
 
 """ points missing """
-def pointsreducing( severity,pts):
+def pointsreducing(severity, pts):
     """
     Simulates missing lidar points based on a given severity level.
 
     Args:
+    severity: An integer between 1 and 3.
     pts: A numpy array of lidar points.
-    severity: An integer between 1 and 3, where 1 is the least severe and 3 is the most severe.
 
     Returns:
     A numpy array of lidar points with missing points.
     """
-    s = [70, 80, 90][severity - 1]
+    
+    s_vals = [70, 80, 90]
+    safe_severity = min(severity, 2)
+    s = s_vals[safe_severity]
 
     size = pts.shape[0]
     nr_of_samps = int(round(size * ((100 - s) / 100)))  # Calculate number of points to keep
@@ -2055,8 +2098,8 @@ def pointsreducing( severity,pts):
 
 '''  fog function'''
 # Use the config variable instead of relative path
-INTEGRAL_PATH = _FOG_LOOKUP_DIR
-
+INTEGRAL_PATH = Path(_FOG_LOOKUP_DIR)
+AVAILABLE_TAU_Hs = [20]
 class ParameterSet:
 
     def __init__(self, **kwargs) -> None:
@@ -2065,9 +2108,9 @@ class ParameterSet:
         self.n_min = 100
         self.n_max = 1000
 
-        self.r_range = 100
+        self.r_range = 100 #default is 200 for computation reasons we set to 100
         self.r_range_min = 50
-        self.r_range_max = 250
+        self.r_range_max = 125
 
         ##########################
         # soft target a.k.a. fog #
@@ -2107,9 +2150,10 @@ class ParameterSet:
         self.e_p = self.p_0 * self.tau_h  # equation (7) in [1]
 
         # aperture area of the receiver (in in m²)
-        self.a_r = 0.25
-        self.a_r_min = 0.01
-        self.a_r_max = 0.1
+        # VLP-32C area: pi * (0.01)^2 = ~0.000314
+        self.a_r = 0.000314               
+        self.a_r_min = 0.0001
+        self.a_r_max = 0.001
         self.a_r_scale = 1000
 
         # loss of the receiver's optics
@@ -2122,14 +2166,17 @@ class ParameterSet:
 
         self.linear_xsi = True
 
-        self.D = 0.1                              # in m              (displacement of transmitter and receiver)
-        self.ROH_T = 0.01                         # in m              (radius of the transmitter aperture)
-        self.ROH_R = 0.01                         # in m              (radius of the receiver aperture)
-        self.GAMMA_T_DEG = 2                      # in deg            (opening angle of the transmitter's FOV)
-        self.GAMMA_R_DEG = 3.5                    # in deg            (opening angle of the receiver's FOV)
+        # CHANGE THESE VALUES FOR VLP-32C
+        self.D = 0.0                      # VLP-32C is practically co-axial, so displacement is ~0
+        self.ROH_T = 0.005                # Radius of transmitter (approx 5mm)
+        self.ROH_R = 0.01                 # Radius of receiver (aperture is ~20mm, so radius is 10mm or 0.01m)
+        
+        # Beam divergence is 3 mrad (0.17 degrees)
+        self.GAMMA_T_DEG = 0.17           # Transmitter beam divergence
+        self.GAMMA_R_DEG = 0.20           # Receiver FOV (usually slightly larger than transmitter)
+        
         self.GAMMA_T = math.radians(self.GAMMA_T_DEG)
         self.GAMMA_R = math.radians(self.GAMMA_R_DEG)
-
 
         # range at which receiver FOV starts to cover transmitted beam (in m)
         self.r_1 = 0.9
@@ -2164,11 +2211,41 @@ class ParameterSet:
         self.__dict__.update(kwargs)
 
 
-def get_integral_dict(p: ParameterSet) -> Dict:
+def old_get_integral_dict(p: ParameterSet) -> Dict:
     alpha =p.alpha
     beta=p.beta
     # Using the global INTEGRAL_PATH derived from top config
     filename = Path(INTEGRAL_PATH) / f'integral_0m_to_200m_stepsize_0.1m_alpha_{alpha}_beta_{beta}.pickle'
+
+    with open(filename, 'rb') as handle:
+        integral_dict = pickle.load(handle)
+
+    return integral_dict
+
+
+def get_available_alphas() -> List[float]:
+
+    alphas = []
+
+    for file in os.listdir(INTEGRAL_PATH):
+
+        if file.endswith(".pickle"):
+
+            alpha = file.split('_')[-1].replace('.pickle', '')
+
+            alphas.append(float(alpha))
+
+    return sorted(alphas)
+
+
+def get_integral_dict(p: ParameterSet) -> Dict:
+
+    alphas = get_available_alphas()
+
+    alpha = min(alphas, key=lambda x: abs(x - p.alpha))
+    tau_h = min(AVAILABLE_TAU_Hs, key=lambda x: abs(x - int(p.tau_h * 1e9)))
+
+    filename = INTEGRAL_PATH / f'integral_0m_to_100m_stepsize_0.1m_tau_h_{tau_h}ns_alpha_{alpha}.pickle'
 
     with open(filename, 'rb') as handle:
         integral_dict = pickle.load(handle)
@@ -2202,8 +2279,8 @@ def P_R_fog_soft(p: ParameterSet, pc: np.ndarray, original_intesity: np.ndarray,
 
         # load integral values from precomputed dict
         key = float(str(round(r_0, 1)))
-        # limit key to a maximum of 200 m
-        fog_distance, fog_response = integral_dict[min(key, 200)]
+        # limit key to a maximum of 50 m
+        fog_distance, fog_response = integral_dict[min(key, 50)]
         fog_response = fog_response * original_intesity[i] * (r_0 ** 2) * p.beta / p.beta_0
 
         # limit to 255
@@ -2291,12 +2368,15 @@ def P_R_fog_soft(p: ParameterSet, pc: np.ndarray, original_intesity: np.ndarray,
 
 def simulate_fog(severity, pc: np.ndarray, noise: int=0, gain: bool = False, noise_variant: str = 'v1',
                  hard: bool = True, soft: bool = True) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    
+    # 3 levels of severity mapping
     s_vals = [
-        (0.02, 0.008),
+        (0.02, 0.008), 
         (0.03, 0.008),
         (0.06, 0.05)   
     ]
-    s = s_vals[severity - 1]
+    safe_severity = min(severity, 2)
+    s = s_vals[safe_severity]
     
     p = ParameterSet(alpha=s[0],beta=s[1]) 
     augmented_pc = copy.deepcopy(pc)
@@ -2496,7 +2576,7 @@ def estimate_laser_parameters(pointcloud_planes, calculated_indicent_angle, powe
     idx = np.where(min_vals > 5)
     min_vals = min_vals[idx]
     idx1 = [i + 1 for i in idx]
-    x = (xedges[tuple(idx)] + xedges[tuple(idx1)]) / 2
+    x = (xedges[idx] + xedges[idx1]) / 2
 
     if estimation_method == 'poly':
         pmin = ransac_polyfit(x, min_vals, order=2)
@@ -2524,7 +2604,7 @@ def process_single_channel(root_path: str, particle_file_prefix: str, orig_pc: n
     :param order:                   Order of the particle disks.
     :param channel_infos            List of Dicts containing sensor calibration info.
 
-    :param channel:                 Number of the LiDAR channel [0, 63].
+    :param channel:                 Number of the LiDAR channel [0, 31].
 
     :return:                        Tuple of
                                     - intensity_diff_sum,
@@ -2570,10 +2650,10 @@ def process_single_channel(root_path: str, particle_file_prefix: str, orig_pc: n
     occlusion_list = get_occlusions(beam_angles=beam_angles, ranges_orig=distance, beam_divergence=beam_divergence,
                                     root_path=root_path, particle_file=particle_file)
 
-    lidar_range = 120                       # in meter
+    lidar_range = 100                       # in meter, real sensor is 200 but 100 is sufficient
     intervals_per_meter = 10                # => 10cm discretization
     beta_0 = 1 * 10 ** -6 / PI
-    tau_h = 1e-8                            #  value 10ns taken from HDL64-S1 specsheet
+    tau_h = 5e-9                           #  value 5ns taken from VLP-32C specsheet
 
     M = lidar_range * intervals_per_meter
 
@@ -2587,10 +2667,8 @@ def process_single_channel(root_path: str, particle_file_prefix: str, orig_pc: n
         d_orig = distance[j]
         i_orig = intensity[j]
 
-        if channel in [53, 55, 56, 58]:
-            max_intensity = 230
-        else:
-            max_intensity = 255
+     
+        max_intensity = 255
 
         i_adjusted = i_orig - 255 * focal_slope * np.abs(focal_offset - (1 - d_orig/120)**2)
         i_adjusted = np.clip(i_adjusted, 0, max_intensity)      # to make sure we don't get negative values
@@ -2613,7 +2691,8 @@ def process_single_channel(root_path: str, particle_file_prefix: str, orig_pc: n
                 end_index = int(np.floor((r_j + c * tau_h) * intervals_per_meter) + 1)
 
                 for k in range(start_index, end_index):
-                    i[k] += received_power(CA_P0, beta_0, ratio, R[k], r_j, tau_h)
+                    if k < len(i):
+                        i[k] += received_power(CA_P0, beta_0, ratio, R[k], r_j, tau_h)
 
             max_index = np.argmax(i)
             i_max = i[max_index]
@@ -3103,7 +3182,7 @@ def simulate_snow(severity: int,
                   noise_floor: float=0.7,
                   root_path: str=None) -> np.ndarray:
     """
-    :param severity:                Integer 1-3
+    :param severity:                Integer 0-2
     :param pc:                      N-by-5 array containing original pointcloud (x, y, z, intensity, channel).
     :param label:                   Semantic labels.
     :param beam_divergence:         Beam divergence in degrees.
@@ -3165,15 +3244,16 @@ def simulate_snow(severity: int,
 
     channel_list = [None] * num_channels
 
-    # Mapping 5 severity levels
+    # Mapping 3 severity levels
   
     s_vals = [
         (0.5, 1.2),  
         (2.5, 1.6),  
-        (1.5, 0.4), 
+        (1.5, 0.4)   
     ]
-    
-    s = s_vals[severity - 1]
+    safe_severity = min(severity, 2)
+    s = s_vals[safe_severity]
+
     rain_rate = snowfall_rate_to_rainfall_rate(float(s[0]), float(s[1]))
     occupancy = compute_occupancy(float(s[0]), float(s[1]))
     particle_file_prefix = f'gunn_{rain_rate}_{occupancy}' 
@@ -3281,13 +3361,14 @@ def simulate_snow_sweep(severity: int,
 
     channel_list = [None] * num_channels
 
-    # Mapping 5 severity levels (Same logic as simulate_snow)
+    # Mapping 3 severity levels
     s_vals = [
-        (0.5, 1.2),
-        (2.5, 1.6),
-        (1.5, 0.4),
+        (0.5, 1.2),  
+        (2.5, 1.6),  
+        (1.5, 0.4)   
     ]
-    s = s_vals[severity - 1]
+    safe_severity = min(severity, 2)
+    s = s_vals[safe_severity]
 
     rain_rate = snowfall_rate_to_rainfall_rate(float(s[0]), float(s[1]))
     occupancy = compute_occupancy(float(s[0]), float(s[1]))
@@ -3346,8 +3427,8 @@ def xsi(R: float, R_1: float = 0.9, R_2: float = 1.0) -> float:
         b = 0 - (m * R_1)
         y = m * R + b
         return y
-
-############################ 3D_Corruptions_AD ##############################
+    
+########################### 3D_Corruptions_AD ##############################
 #               https://github.com/thu-ml/3D_Corruptions_AD 
 #               We adapted the code from 3D_Corruptions_AD for our use case.
 #               We made some modifications to the code to fit our use case, such as changing the input and output formats, and removing some functionalities that are not relevant to our use case.
@@ -3361,13 +3442,14 @@ Rain
 def rain_sim(severity, pointcloud   ):
     from .utils import lisa
     rain_sim = lisa.LISA(show_progressbar=True)
-    c = [0.20, 0.73, 1.5625, 3.125, 7.29, 10.42][severity-1]
+    c = [0.20, 0.73, 1.5625, 3.125, 7.29, 10.42][severity]
     
     # Enforce KITTI format (N x 4) to prevent LISA shape broadcasting crashes
     pc_4 = pointcloud[:, :4] if pointcloud.shape[1] > 4 else pointcloud
     
     points = rain_sim.augment(pc_4, c)
     return points
+    
 
 '''
 Snow
@@ -3376,21 +3458,21 @@ def snow_sim(severity, pointcloud):
     from .utils import lisa
     from .utils.wet_ground.augmentation import ground_water_augmentation
     snow_sim = lisa.LISA(mode='gunn', show_progressbar=True) 
-    c = [0.20, 0.73, 1.5625, 3.125, 7.29, 10.42][severity-1]
+    c = [0.20, 0.73, 1.5625, 3.125, 7.29, 10.42][severity]
     
     # Enforce KITTI format (N x 4) to prevent LISA shape broadcasting crashes
     pc_4 = pointcloud[:, :4] if pointcloud.shape[1] > 4 else pointcloud
     
     points = snow_sim.augment(pc_4, c)
     return points
-
+#TODO: DROP BECAUSE SAME AS BELOW AND DIFF gunn files.
 '''
-Fog
+Fog: 
 '''
 def fog_sim(severity, pointcloud):
     from .utils.fog_sim import simulate_fog
     from .utils.fog_sim import ParameterSet
-    c = [0.005, 0.01, 0.02, 0.03, 0.06][severity-1] # form original paper
+    c = [0.005, 0.01, 0.02, 0.03, 0.06][severity] # form original paper
     parameter_set = ParameterSet(alpha=c, gamma=0.000001)
     points, _, _ = simulate_fog(parameter_set, pointcloud, 1)
     return points
@@ -3400,7 +3482,7 @@ Sunlight
 '''
 def scene_glare_noise(severity, pointcloud):
     N, C = pointcloud.shape
-    c = [int(0.010*N), int(0.020*N),int(0.030*N),int(0.040*N), int(0.050*N)][severity-1]
+    c = [int(0.010*N), int(0.020*N),int(0.030*N),int(0.040*N), int(0.050*N)][severity]
     index = np.random.choice(N, c, replace=False)
     pointcloud[index] += np.random.normal(size=(c, C)) * 2.0
     return pointcloud
@@ -3413,7 +3495,7 @@ Crosstalk
 '''
 def lidar_crosstalk_noise(severity, pointcloud):
     N, C = pointcloud.shape
-    c = [int(0.004*N), int(0.008*N),int(0.012*N),int(0.016*N), int(0.020*N)][severity-1]
+    c = [int(0.004*N), int(0.008*N),int(0.012*N),int(0.016*N), int(0.020*N)][severity]
     index = np.random.choice(N, c, replace=False)
     pointcloud[index] += np.random.normal(size=(c, C)) * 3.0
     return pointcloud
@@ -3425,7 +3507,7 @@ Density
 def density_dec_global(severity, pointcloud):
     N, C = pointcloud.shape
     num = int(N * 0.3)
-    c = [int(0.2*num), int(0.4*num), int(0.6*num), int(0.8*num), num][severity - 1]
+    c = [int(0.2*num), int(0.4*num), int(0.6*num), int(0.8*num), num][severity]
     idx = np.random.choice(N, c, replace=False)
     pointcloud = np.delete(pointcloud, idx, axis=0)
     return pointcloud
@@ -3436,7 +3518,7 @@ Cutout
 def cutout_local(severity, pointcloud):
     N, C = pointcloud.shape
     num = int(N*0.02)
-    c = [(2,num), (3,num), (5,num), (7,num), (10,num)][severity-1]
+    c = [(2,num), (3,num), (5,num), (7,num), (10,num)][severity]
     for _ in range(c[0]):
         i = np.random.choice(pointcloud.shape[0],1)
         picked = pointcloud[i]
@@ -3449,9 +3531,9 @@ def cutout_local(severity, pointcloud):
 '''
 Gaussian (L)
 '''
-def gaussian_noise(severity, pointcloud):
+def gaussian_noise_lidar(severity, pointcloud):
     N, C = pointcloud.shape # N*3
-    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity-1]
+    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity]
     jitter = np.random.normal(size=(N, C)) * c
     new_pc = (pointcloud + jitter).astype('float32')
     return new_pc
@@ -3462,7 +3544,7 @@ Uniform (L)
 def uniform_noise(severity, pointcloud):
     # TODO
     N, C = pointcloud.shape
-    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity - 1]
+    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity]
     jitter = np.random.uniform(-c, c, (N, C))
     new_pc = (pointcloud + jitter).astype('float32')
     return new_pc
@@ -3471,9 +3553,9 @@ def uniform_noise(severity, pointcloud):
 Impulse (L)
 '''
 
-def impulse_noise(severity, pointcloud):
+def impulse_noise_lidar(severity, pointcloud):
     N, C = pointcloud.shape
-    c = [N // 30, N // 25, N // 20, N // 15, N // 10][severity - 1]
+    c = [N // 30, N // 25, N // 20, N // 15, N // 10][severity]
     index = np.random.choice(N, c, replace=False)
     pointcloud[index] += np.random.choice([-1, 1], size=(c, C)) * 0.1
     return pointcloud
@@ -3483,24 +3565,30 @@ Fov lost
 '''
 
 def fov_filter(severity, pointcloud):
-
-    angle1 = [-105, -90, -75, -60, -45][severity-1]
-    angle2 = [105, 90, 75, 60, 45][severity-1]
+    # Extract the angle bounds based on severity
+    angle1 = [-105, -90, -75, -60, -45][severity]
+    angle2 = [105, 90, 75, 60, 45][severity]
+    
+    # Handle both raw Numpy arrays and OpenPCDet BasePoints
     if isinstance(pointcloud, np.ndarray):
         pts_npy = pointcloud
-    elif isinstance(pointcloud, BasePoints):
-        pts_npy = pointcloud.tensor.numpy()
     else:
-        raise NotImplementedError
-    pts_p = (np.arctan(pts_npy[:, 0] / pts_npy[:, 1]) + (
-                pts_npy[:, 1] < 0) * np.pi + np.pi * 2) % (np.pi * 2)
-    pts_p[pts_p > np.pi] -= np.pi * 2
-    pts_p = pts_p / np.pi * 180
-    assert np.all(-180 <= pts_p) and np.all(pts_p <= 180)
+        # If it's a BasePoints object (common in 3D_Corruptions_AD), extract the tensor
+        pts_npy = pointcloud.tensor.numpy()
+
+    # --- THE FIX ---
+    # np.arctan2(X, Y) completely eliminates the ZeroDivisionError 
+    # and natively outputs the exact [-pi, pi] angles we need.
+    pts_p = np.arctan2(pts_npy[:, 0], pts_npy[:, 1])
+    
+    # Convert from Radians to Degrees for the filter check
+    pts_p = np.rad2deg(pts_p)
+    # ---------------
+
+    # Keep only the points that fall inside the FOV angles
     filt = np.logical_and(pts_p >= angle1, pts_p <= angle2)
 
     return pointcloud[filt]
-
 
 
 # Motion corruptions
@@ -3519,8 +3607,8 @@ Motion Compensation
 '''
 def fulltrajectory_noise(severity, pointcloud, pc_pose):
     from .utils.lidar_split import lidar_split, reconstruct_pc
-    ct = [0.02, 0.04, 0.06, 0.08, 0.10][severity-1]
-    cr = [0.002, 0.004, 0.006, 0.008, 0.010][severity-1]
+    ct = [0.02, 0.04, 0.06, 0.08, 0.10][severity]
+    cr = [0.002, 0.004, 0.006, 0.008, 0.010][severity]
     new_pose_list, new_lidar_list = lidar_split(pointcloud, pc_pose)
     r_noise = np.random.normal(size=(100, 3, 3)) * cr
     t_noise = np.random.normal(size=(100, 3)) * ct
@@ -3622,8 +3710,8 @@ def spatial_alignment_noise(severity, ori_pose):
     input: ori_pose 4*4
     output: noise_pose 4*4
     '''
-    ct = [0.02, 0.04, 0.06, 0.08, 0.10][severity-1]*2
-    cr = [0.002, 0.004, 0.006, 0.008, 0.010][severity-1]*2
+    ct = [0.02, 0.04, 0.06, 0.08, 0.10][severity]*2
+    cr = [0.002, 0.004, 0.006, 0.008, 0.010][severity]*2
     r_noise = np.random.normal(size=(3, 3)) * cr
     t_noise = np.random.normal(size=(3)) * ct
     ori_pose[:3, :3] += r_noise
@@ -3634,9 +3722,8 @@ def spatial_alignment_noise(severity, ori_pose):
 '''
 Temporal
 '''
-def temporal_alignment_noise(severity):
-    frame = [2, 4, 6, 8, 10][severity-1]
-    return frame
+def temporal_alignment_noise(severity,pointcloud):
+    return pointcloud
 
 
 ###### Approximation Methods for Fast Simulation of Weather Effects ######
@@ -3650,21 +3737,41 @@ This method is designed for real-time applications and can be used as a quick wa
 without the overhead of more complex physical models.
 '''
 def fast_rain(severity, pointcloud):
+    # Ensure severity stays within 0 to 4
+    idx = max(0, min(int(severity), 4))
     
     # 1. Define severity scales (0 to 4 mapping)
-    # drop_rates: 5%, 10%, 15%, 20%, 30% of points disappear
-    drop_rates = [0.05, 0.10, 0.15, 0.20, 0.30]
+    # wedge_widths: How wide the water droplet occlusion is (in radians)
+    wedge_widths = [np.pi/16, np.pi/8, np.pi/6, np.pi/4, np.pi/3] 
+    # wedge_drop_rate: Inside the localized mask, how many points are lost?
+    wedge_drop_rates = [0.30, 0.50, 0.70, 0.85, 0.95]
     # ghost_rates: add 1%, 2%, 5%, 8%, 12% backscatter noise near the sensor
     ghost_rates = [0.01, 0.02, 0.05, 0.08, 0.12]
     
-    drop_rate = drop_rates[severity - 1]
-    ghost_rate = ghost_rates[severity - 1]
+    wedge_width = wedge_widths[idx]
+    wedge_drop_rate = wedge_drop_rates[idx]
+    ghost_rate = ghost_rates[idx]
     
     N = pointcloud.shape[0]
     
-    # --- Step 1: Attenuation (Fast Point Dropout) ---
-    # Create a random mask to keep points
-    keep_mask = np.random.rand(N) > drop_rate
+    # --- Step 1: Attenuation (Localized Angular Dropout Mask) ---
+    # Calculate azimuth angle for all points: arctan2(y, x) yields [-pi, pi]
+    azimuths = np.arctan2(pointcloud[:, 1], pointcloud[:, 0])
+    
+    # Pick a random center angle for the water droplet occlusion
+    droplet_center = np.random.uniform(-np.pi, np.pi)
+    
+    # Determine which points fall inside the droplet's angular wedge
+    # (Handling the wrap-around at -pi/pi)
+    angle_diff = np.abs(azimuths - droplet_center)
+    angle_diff = np.minimum(angle_diff, 2*np.pi - angle_diff)
+    in_wedge_mask = angle_diff < (wedge_width / 2.0)
+    
+    # Apply high dropout ONLY to points inside the localized wedge
+    random_chances = np.random.rand(N)
+    keep_mask = np.ones(N, dtype=bool)
+    keep_mask[in_wedge_mask] = random_chances[in_wedge_mask] > wedge_drop_rate
+    
     pc_dropped = pointcloud[keep_mask]
     
     # --- Step 2: Backscatter (Fast Ghost Points) ---
@@ -3699,21 +3806,27 @@ def fast_fog(severity, points_np):
     
     # Define severity scales (Index 0 to 4)
     # max_visible_ranges: At level 4, the LiDAR can only see 15 meters.
-    max_visible_ranges = [80.0, 60.0, 40.0, 25.0, 15.0]
+    # alpha_coeffs: Extinction coefficients for Beer-Lambert Law
+    # Higher alpha = thicker fog = faster exponential drop-off
+    alpha_coeffs = [0.01, 0.03, 0.06, 0.1, 0.2]
     # ghost_counts: Number of backscatter points injected near the sensor
     ghost_counts = [200, 500, 1000, 2000, 3000]
     
-    max_visible_range = max_visible_ranges[idx]
+    alpha = alpha_coeffs[idx]
     num_ghost_points = ghost_counts[idx]
     
     N = points_np.shape[0]
     if N == 0:
         return points_np
     
-    # --- Step 1: Attenuation (Drop distant points) ---
+    # --- Step 1: Attenuation (Beer-Lambert Exponential Drop) ---
     distances = np.sqrt(points_np[:, 0]**2 + points_np[:, 1]**2 + points_np[:, 2]**2)
-    drop_probabilities = np.clip(distances / max_visible_range, 0.0, 1.0)
-    keep_mask = np.random.rand(N) > drop_probabilities
+    
+    # P_surv(d) = e^(-alpha * d) as defined in Equation 3.1
+    survival_probabilities = np.exp(-alpha * distances) 
+    
+    # Keep point if random number is less than its survival probability
+    keep_mask = np.random.rand(N) < survival_probabilities
     attenuated_points = points_np[keep_mask]
     
     # --- Step 2: Backscatter (Ghost points near car) ---

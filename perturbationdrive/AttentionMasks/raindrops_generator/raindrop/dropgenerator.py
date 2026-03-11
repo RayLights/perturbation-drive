@@ -82,9 +82,9 @@ def generate_label(h, w, cfg):
     maxR = cfg["maxR"]
     minR = cfg["minR"]
     drop_num = random.randint(minDrop, maxDrop)
-    
-    imgh = h + 20
-    imgw = w + 20
+    #we want raindrops also beyond edges
+    imgh = h + 5
+    imgw = w + 5
     ran_pos = [(int(random.random() * imgw), int(random.random() * imgh)) for _ in range(drop_num)]
     
     listRainDrops = []
@@ -158,7 +158,11 @@ def generateDrops(bg_img, cfg, listFinalDrops):
                 output = Image.fromarray(arr)
             else:
                 output = drop.getTexture()
-                
+         
+        edge_ratio = cfg.get("edge_darkratio")
+        enhancer = ImageEnhance.Brightness(output)
+        output = enhancer.enhance(edge_ratio)  
+          
         PIL_bg_img.paste(output, (paste_x, paste_y), output)
 
     final_image = np.asarray(PIL_bg_img)

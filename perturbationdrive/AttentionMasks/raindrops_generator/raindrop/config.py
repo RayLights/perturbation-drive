@@ -10,10 +10,50 @@ A, B, C, D -- 4 tuples defining coordinates of Bezier control points in Alpha Ma
 """
 
 cfg = {
+	'maxR': 50,
+	'minR': 30,
+	'maxDrops': 30,
+	'minDrops': 30,
+	'edge_darkratio': 0.3,
+	'return_label': False,
+	'label_thres': 128,
+    'A': (1, 4.5),
+	'B': (3, 1),
+	'C': (1, 3),
+	'D': (3, 3)
+}
+cfg_pertD_repo = {
 	'maxR': 100, # max not more then 150
 	'minR': 30,
 	'maxDrops': 100,
 	'minDrops': 50,
+	'edge_darkratio': 0.6,
+	'return_label': False,
+	'label_thres': 128,
+	'A': (1, 4.5),
+	'B': (3, 1),
+	'C': (1, 3),
+	'D': (3, 3)
+}
+
+cfg_ROLE = {
+	'maxR': 50,
+	'minR': 30,
+	'maxDrops': 30,
+	'minDrops': 30,
+	'edge_darkratio': 0.3,
+	'return_label': False,
+	'label_thres': 128,
+    'A': (1, 4.5),
+	'B': (3, 1),
+	'C': (1, 3),
+	'D': (3, 3)
+}
+cfg_vera = {
+	'maxR': 100, # max not more then 150
+	'minR': 1,
+	'maxDrops': 100,
+	'minDrops': 90,
 	'edge_darkratio': 0.6,
 	'return_label': False,
 	'label_thres': 128,

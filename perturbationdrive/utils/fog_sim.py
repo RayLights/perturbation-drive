@@ -17,7 +17,7 @@ RNG = np.random.default_rng(seed=42)
 
 AVAILABLE_TAU_Hs = [20]
 LIDAR_FOLDERS = ['lidar_hdl64_strongest', 'lidar_hdl64_last']
-INTEGRAL_PATH = Path(os.path.dirname(os.path.realpath(__file__))) / 'integral_lookup_tables' / 'original'
+INTEGRAL_PATH = Path(os.path.dirname(os.path.realpath(__file__))) / 'fog_lookup_tables' 
 
 def get_available_alphas() -> List[float]:
 
@@ -42,9 +42,9 @@ class ParameterSet:
         self.n_min = 100
         self.n_max = 1000
 
-        self.r_range = 100
+        self.r_range = 100 #default is 200 for computation reasons we set to 100
         self.r_range_min = 50
-        self.r_range_max = 250
+        self.r_range_max = 125
 
         ##########################
         # soft target a.k.a. fog #
@@ -84,9 +84,10 @@ class ParameterSet:
         self.e_p = self.p_0 * self.tau_h  # equation (7) in [1]
 
         # aperture area of the receiver (in in m²)
-        self.a_r = 0.25
-        self.a_r_min = 0.01
-        self.a_r_max = 0.1
+        # VLP-32C area: pi * (0.01)^2 = ~0.000314
+        self.a_r = 0.000314               
+        self.a_r_min = 0.0001
+        self.a_r_max = 0.001
         self.a_r_scale = 1000
 
         # loss of the receiver's optics
@@ -99,11 +100,15 @@ class ParameterSet:
 
         self.linear_xsi = True
 
-        self.D = 0.1                                    # in m              (displacement of transmitter and receiver)
-        self.ROH_T = 0.01                               # in m              (radius of the transmitter aperture)
-        self.ROH_R = 0.01                               # in m              (radius of the receiver aperture)
-        self.GAMMA_T_DEG = 2                            # in deg            (opening angle of the transmitter's FOV)
-        self.GAMMA_R_DEG = 3.5                          # in deg            (opening angle of the receiver's FOV)
+        # CHANGE THESE VALUES FOR VLP-32C
+        self.D = 0.0                      # VLP-32C is practically co-axial, so displacement is ~0
+        self.ROH_T = 0.005                # Radius of transmitter (approx 5mm)
+        self.ROH_R = 0.01                 # Radius of receiver (aperture is ~20mm, so radius is 10mm or 0.01m)
+        
+        # Beam divergence is 3 mrad (0.17 degrees)
+        self.GAMMA_T_DEG = 0.17           # Transmitter beam divergence
+        self.GAMMA_R_DEG = 0.20           # Receiver FOV (usually slightly larger than transmitter)
+        
         self.GAMMA_T = math.radians(self.GAMMA_T_DEG)
         self.GAMMA_R = math.radians(self.GAMMA_R_DEG)
 
@@ -157,7 +162,7 @@ def get_integral_dict(p: ParameterSet) -> Dict:
     alpha = min(alphas, key=lambda x: abs(x - p.alpha))
     tau_h = min(AVAILABLE_TAU_Hs, key=lambda x: abs(x - int(p.tau_h * 1e9)))
 
-    filename = INTEGRAL_PATH / f'integral_0m_to_200m_stepsize_0.1m_tau_h_{tau_h}ns_alpha_{alpha}.pickle'
+    filename = INTEGRAL_PATH / f'integral_0m_to_100m_stepsize_0.1m_tau_h_{tau_h}ns_alpha_{alpha}.pickle'
 
     with open(filename, 'rb') as handle:
         integral_dict = pickle.load(handle)
@@ -195,8 +200,8 @@ def P_R_fog_soft(p: ParameterSet, pc: np.ndarray, original_intesity: np.ndarray,
 
         # load integral values from precomputed dict
         key = float(str(round(r_0, 1)))
-        # limit key to a maximum of 200 m
-        fog_distance, fog_response = integral_dict[min(key, 200)]
+        # limit key to a maximum of 100 m
+        fog_distance, fog_response = integral_dict[min(key, 100)]
 
         fog_response = fog_response * original_intesity[i] * (r_0 ** 2) * p.beta / p.beta_0
 

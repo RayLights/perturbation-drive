@@ -61,18 +61,18 @@ def img2velodyne(calib_dir, img_id, p):
 Corruptions
 '''
 
-def density(pointcloud, severity):
+def density_dec_bbox(pointcloud, severity):
     N, C = pointcloud.shape
     num = int(N*0.1)
-    c = [int(0.1 * N), int(0.2 * N), int(0.3 * N), int(0.4 * N), int(0.5 * N)][severity - 1]
+    c = [int(0.1 * N), int(0.2 * N), int(0.3 * N), int(0.4 * N), int(0.5 * N)][severity]
     idx = np.random.choice(N, c, replace=False)
     pointcloud = np.delete(pointcloud, idx, axis=0)
     return pointcloud
 
-def cutout(pointcloud, severity):
+def cutout_bbox(pointcloud, severity):
     N, C = pointcloud.shape
     #from 30 changed to 3000 to qualify kitti
-    c = [(1,int(N*0.3)), (1,int(N*0.4)), (1,int(N*0.5)), (1,int(N*0.6)), (1,int(N*0.7))][severity-1]
+    c = [(1,int(N*0.3)), (1,int(N*0.4)), (1,int(N*0.5)), (1,int(N*0.6)), (1,int(N*0.7))][severity]
     for _ in range(c[0]):
         i = np.random.choice(pointcloud.shape[0],1)
         picked = pointcloud[i]
@@ -83,25 +83,25 @@ def cutout(pointcloud, severity):
     # print(pointcloud.shape)
     return pointcloud
 
-def gaussian(pointcloud, severity):
+def gaussian_noise_bbox(pointcloud, severity):
     N, C = pointcloud.shape # N*3
-    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity-1]
+    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity]
     jitter = np.random.normal(size=(N, C)) * c
     new_pc = (pointcloud + jitter).astype('float32')
     return new_pc
 
 
-def uniform(pointcloud, severity):
+def uniform_noise_bbox(pointcloud, severity):
     N, C = pointcloud.shape
-    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity - 1]
+    c = [0.02, 0.04, 0.06, 0.08, 0.10][severity]
     jitter = np.random.uniform(-c, c, (N, C))
     new_pc = (pointcloud + jitter).astype('float32')
     return new_pc
 
 
-def impulse(pointcloud, severity):
+def impulse_noise_bbox(pointcloud, severity):
     N, C = pointcloud.shape
-    c = [N // 30, N // 25, N // 20, N // 15, N // 10][severity - 1]
+    c = [N // 30, N // 25, N // 20, N // 15, N // 10][severity]
     index = np.random.choice(N, c, replace=False)
     pointcloud[index] += np.random.choice([-1, 1], size=(c, C)) * 0.1
     return pointcloud
@@ -111,13 +111,6 @@ bbox_convert
 '''
 
 def to_Max2(points, gt_boxes_lidar):
-    """
-    Args:
-        points: N x 3+C
-        gt_boxes_lidar: 7
-    Returns:
-        points normalized to max-2 unit square box: N x 3+C
-    """
     # shift
     points[:, :3] = points[:, :3] - gt_boxes_lidar[:3]
     # normalize to 2 units
@@ -131,19 +124,12 @@ def to_Max2(points, gt_boxes_lidar):
          -sina, cosa, 0.0,
          0.0, 0.0, 1.0]).reshape(3, 3)
     points_rot = np.matmul(points[:, 0:3], rot_matrix)
-    points = np.hstack((points_rot, points[:, 3:].reshape(-1, 1)))
-
+    
+    # FIX: Drop the reshape! Just horizontally stack the extra columns natively.
+    points = np.hstack((points_rot, points[:, 3:]))
     return points
 
-
 def to_Lidar(points, gt_boxes_lidar):
-    """
-    Args:
-        points: N x 3+C
-        gt_boxes_lidar: 7
-    Returns:
-        points denormalized to lidar coordinates
-    """
     angle = gt_boxes_lidar[6]
     # along_z
     cosa = np.cos(angle)
@@ -153,12 +139,14 @@ def to_Lidar(points, gt_boxes_lidar):
          -sina, cosa, 0.0,
          0.0, 0.0, 1.0]).reshape(3, 3)
     points_rot = np.matmul(points[:, 0:3], rot_matrix)
-    points = np.hstack((points_rot, points[:, 3:].reshape(-1, 1)))
+    
+    # FIX: Drop the reshape!
+    points = np.hstack((points_rot, points[:, 3:]))
+    
     # denormalize to lidar
     points[:, :3] = points[:, :3] * np.max(gt_boxes_lidar[3:6]) / 2
     # shift
     points[:, :3] = points[:, :3] + gt_boxes_lidar[:3]
-
     return points
 
 # normalize
@@ -178,14 +166,11 @@ def normalize_gt(points, gt_box_ratio):
                 points[:,i] /= indicator
     return points
 
-def shear(pointcloud, severity,gt_boxes):
-
+def shear_bbox(pointcloud, severity, gt_boxes):
     N, _ = pointcloud.shape
-    c = [0.05, 0.1, 0.15, 0.2, 0.25][severity - 1]
+    c = [0.05, 0.1, 0.15, 0.2, 0.25][severity]
 
-    # convert to max-2
     pts_obj_max2 = to_Max2(pointcloud, gt_boxes)
-    # shear
     b = np.random.uniform(c - 0.05, c + 0.05) * np.random.choice([-1, 1])
     d = np.random.uniform(c - 0.05, c + 0.05) * np.random.choice([-1, 1])
     e = np.random.uniform(c - 0.05, c + 0.05) * np.random.choice([-1, 1])
@@ -196,22 +181,19 @@ def shear(pointcloud, severity,gt_boxes):
                        
     new_pc = np.matmul(pts_obj_max2[:, :3], matrix).astype('float32')
 
-    pts_obj_max2_crp = np.hstack((new_pc, pts_obj_max2[:, 3].reshape(-1, 1)))
+    # FIX: Use [:, 3:] to keep ALL extra columns (Intensity AND Ring) instead of just [:, 3]
+    pts_obj_max2_crp = np.hstack((new_pc, pts_obj_max2[:, 3:]))
+    
     pts_obj_max2_crp = normalize_gt(pts_obj_max2_crp, gt_boxes[3:6])
     pts_cor = to_Lidar(pts_obj_max2_crp, gt_boxes)
-
     return pts_cor
 
 
-
-def scale(pointcloud, severity,gt_boxes):
+def scale_bbox(pointcloud, severity, gt_boxes):
     N, _ = pointcloud.shape
-    c = [0.04, 0.08, 0.12, 0.16, 0.20][severity-1]
-    xs_list,ys_list,zs_list=[],[],[]
+    c = [0.04, 0.08, 0.12, 0.16, 0.20][severity]
 
-    # convert to max-2
     pts_obj_max2 = to_Max2(pointcloud, gt_boxes)
-    ## scale on two randomly selected directions
     xs, ys, zs = 1.0, 1.0, 1.0
     r = np.random.randint(0,3)
     t = np.random.choice([-1,1])
@@ -221,104 +203,115 @@ def scale(pointcloud, severity,gt_boxes):
         ys += c * t
     else:
         zs += c * t
-    matrix = np.array([[xs,0,0,0],[0,ys,0,0],[0,0,zs,0],[0,0,0,1]])
-    pts_obj_max2_crp = np.matmul(pts_obj_max2, matrix)
+        
+    # FIX: Only multiply the 3D coordinates (X, Y, Z) by a 3x3 matrix
+    matrix = np.array([[xs,0,0],[0,ys,0],[0,0,zs]])
+    new_pc = np.matmul(pts_obj_max2[:, :3], matrix)
+    
+    # FIX: Re-attach Intensity and Ring
+    pts_obj_max2_crp = np.hstack((new_pc, pts_obj_max2[:, 3:]))
+    
     pts_obj_max2_crp[:,2] += (zs-1) * gt_boxes[5]/np.max(gt_boxes[3:6])
-    xs_list.append(xs)
-    ys_list.append(ys)
-    zs_list.append(zs)
-    # convert to Lidar
     pts_cor = to_Lidar(pts_obj_max2_crp, gt_boxes)
-
     return pts_cor
 
 
-def rotation(pointcloud,severity,gt_boxes):
+def rotation_bbox(pointcloud, severity, gt_boxes):
     N, _ = pointcloud.shape
-    c = [1, 3, 5, 7, 9][severity-1]
+    c = [1, 3, 5, 7, 9][severity]
     beta = np.random.uniform(c-1,c+1) * np.random.choice([-1,1]) * np.pi / 180.
-    # convert to max-2
     pts_obj_max2 = to_Max2(pointcloud, gt_boxes)
-    ## rotation
+    
     matrix_roration_z = np.array([[np.cos(beta),np.sin(beta),0],[-np.sin(beta),np.cos(beta),0],[0,0,1]])
     pts_rotated = np.matmul(pts_obj_max2[:,:3], matrix_roration_z)
-    pts_obj_max2_crp = np.hstack((pts_rotated, pts_obj_max2[:,3].reshape(-1,1)))
-    # convert to lidar
+    
+    # FIX: Drop the reshape, use [:, 3:]
+    pts_obj_max2_crp = np.hstack((pts_rotated, pts_obj_max2[:, 3:]))
+    
     pts_cor = to_Lidar(pts_obj_max2_crp, gt_boxes)
-
     return pts_cor
 
-def moving_object(pointcloud, severity):
+def moving_noise_bbox(pointcloud, severity):
     # for kitti: the x is forward
     N, C = pointcloud.shape
-    c = [0.2, 0.4, 0.6, 0.8, 1.0][severity-1]
+    c = [0.2, 0.4, 0.6, 0.8, 1.0][severity]
     m1, m2 = float(c/2), c
-    x_min, x_max = min(pointcloud[:,0]), max(pointcloud[:,0])
+    x_min, x_max = np.min(pointcloud[:,0]), np.max(pointcloud[:,0])
     x_l = (x_max - x_min) / 3
-    for i in range(len(pointcloud)):
-        if pointcloud[i,0] > x_min and pointcloud[i,0] <= x_min+x_l:
-            pointcloud[i,0] += m1
-        elif pointcloud[i,0] <= x_max and pointcloud[i,0] > x_min+x_l:
-            pointcloud[i,0] += m2
-        else:
-            continue
+    
+    # --- VECTORIZED REPLACEMENT ---
+    # Shift points in the front third of the box
+    pointcloud[(pointcloud[:,0] > x_min) & (pointcloud[:,0] <= x_min + x_l), 0] += m1
+    
+    # Shift points in the back two-thirds of the box
+    pointcloud[(pointcloud[:,0] > x_min + x_l) & (pointcloud[:,0] <= x_max), 0] += m2
+    # ------------------------------
+    
     return pointcloud
 
 
 MAP = {
-    'density_dec_bbox':density,
-    'cutout_bbox':cutout,
-    'gaussian_noise_bbox':gaussian,
-    'uniform_noise_bbox':uniform,
-    'impulse_noise_bbox':impulse,
-    'scale_bbox':scale,
-    'shear_bbox':shear,
-    'rotation_bbox':rotation,
-    'moving_noise_bbox':moving_object,
+    'density_dec_bbox':density_dec_bbox,
+    'cutout_bbox':cutout_bbox,
+    'gaussian_noise_bbox':gaussian_noise_bbox,
+    'uniform_noise_bbox':uniform_noise_bbox,
+    'impulse_noise_bbox':impulse_noise_bbox,
+    'scale_bbox':scale_bbox,
+    'shear_bbox':shear_bbox,
+    'rotation_bbox':rotation_bbox,
+    'moving_noise_bbox':moving_noise_bbox,
+    'move_bbox': moving_noise_bbox,
 }
 
 
 
-def pick_bbox(cor,slevel,data,pointcloud):
-
+def pick_bbox(cor, slevel, data, pointcloud):
     xyz = pointcloud
-    bboxes = data[0]
-    flag1 = 0
+    
+    # --- BULLETPROOF DATA EXTRACTION ---
+    # 1. Unwrap the data if it got packed into a tuple or list by the ROS wrapper
+    bboxes = data[0] if isinstance(data, (tuple, list)) else data
+    
+    # 2. Convert to Numpy and handle empty data
+    bboxes = np.array(bboxes)
+    if bboxes.size == 0:
+        return xyz  # No objects detected, return the clean pointcloud instantly
+        
+    # 3. Force it into an N x 7 2D Array (This fixes the IndexError!)
+    bboxes = bboxes.reshape(-1, 7)
+    
     for box in bboxes:
-
-        flag1+=1
-        pcd_1 = []
-        pcd_2 = []
-        x = float(box[0])
-        y = float(box[1])
-        z = float(box[2])
-        x_size = float(box[3])
-        y_size = float(box[4])
-        z_size = float(box[5])
-        angel = float(box[6])
-        p3 = (x, y, z)
-        gt_boxes = []
-        gt_boxes.append(p3[0])
-        gt_boxes.append(p3[1])
-        gt_boxes.append(p3[2])
-        gt_boxes.append(x_size)
-        gt_boxes.append(y_size)
-        gt_boxes.append(z_size)
-        gt_boxes.append(angel)
-
-        for a in xyz:
-            flag = check_point_in_box(a, gt_boxes)
-            if flag == True:
-                pcd_2.append(a)
-            else:
-                pcd_1.append(a)
-        pcd_2 = np.array(pcd_2)
+        # Box parameters: [x, y, z, dx, dy, dz, heading]
+        cos_a = np.cos(box[6])
+        sin_a = np.sin(box[6])
+        
+        # 1. FAST VECTORIZED MATH: Calculate shifts for all points at once
+        shift_x = xyz[:, 0] - box[0]
+        shift_y = xyz[:, 1] - box[1]
+        shift_z = xyz[:, 2] - box[2]
+        
+        local_x = shift_x * cos_a + shift_y * sin_a
+        local_y = shift_y * cos_a - shift_x * sin_a
+        
+        # 2. FAST FILTERING: Create a boolean mask of which points are inside the 3D box
+        inside_mask = (np.abs(shift_z) <= box[5] / 2.0) & \
+                      (np.abs(local_x) <= box[3] / 2.0) & \
+                      (np.abs(local_y) <= box[4] / 2.0)
+                      
+        # Split the pointcloud instantly
+        pcd_2 = xyz[inside_mask]   # Points INSIDE the box
+        pcd_1 = xyz[~inside_mask]  # Points OUTSIDE the box
+        
+        # 3. Apply Corruption
         if len(pcd_2) != 0:
-            if 'bbox' in cor:
-                pcd_2 = MAP[cor](pcd_2, slevel, gt_boxes)
+            if cor in ['shear_bbox', 'scale_bbox', 'rotation_bbox']:
+                pcd_2 = MAP[cor](pcd_2, slevel, box)
             else:
                 pcd_2 = MAP[cor](pcd_2, slevel)
+                
+            # Stitch the corrupted object points back together with the uncorrupted background
             xyz = np.append(pcd_2, pcd_1, axis=0)
+            
     return xyz
 
 
