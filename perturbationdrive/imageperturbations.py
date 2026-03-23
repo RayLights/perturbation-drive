@@ -5,6 +5,7 @@ import itertools
 import skimage.exposure
 from .AttentionMasks.raindrops_generator.raindrop.dropgenerator import generateDrops, generate_label
 import random
+from pathlib import Path
 
 from .AttentionMasks.raindrops_generator.raindrop.config import cfg
 from .perturbationfuncs import (
@@ -728,7 +729,8 @@ FUNCTION_MAPPING = {
     "procedural_rain_dynamic":procedural_rain_dynamic,
     "procedural_rain_static":procedural_rain_static,
 }
-base_path = "./perturbationdrive"
+
+base_path = Path(__file__).resolve().parent.parent
 
 # mapping of dynamic perturbation functions to their image path and iterator name
 FILTER_PATHS = {
