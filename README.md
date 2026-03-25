@@ -4,7 +4,7 @@ A library to test the robustness and ability to generalize to unseen roads of se
 
 This library has three main modules:
 
-1) A collection of the most common perturbation functions which can be used by itself.
+1) A collection of the most common perturbation functions which can be used by themselves.
 2) A benchmarking controller to benchmark the robustness of models to common image perturbations. This controller can be used for end-to-end tests and offline testing.
 3) Modular simulator integration. New simulators can be integrated by implementing a predefined interface and this project shows the example integration of the [Self Driving Sandbox Donkey](https://docs.donkeycar.com/guide/deep_learning/simulator/) (here often referred to as SDSandbox) and [Udacity](https://github.com/udacity/self-driving-car-sim) Simulator. Note, that the simulators used in this project have been adapted minimally to suit the scope of this project.
 
@@ -62,12 +62,12 @@ perturbationdrive/
 │   ├── RoadGenerator/                  # Contains all script regarding road generation
 │   │   ├── RoadGenerator.py            # Abstract base class of the road generator
 │   │   ├── RandomRoadGenerator.py      # Generates a random road
-│   │   └── CustomRoadGenerator.py      # Generates a raod given angles and segment lengths between waypoints
+│   │   └── CustomRoadGenerator.py      # Generates a road given angles and segment lengths between waypoints
 │   │
 │   ├── SaliencyMap/                    # Contains all scripts regarding attention map generation
 │   │
-│   ├── Simulator/                      # Contains all script regarding simualtors and scenarios
-│   │   ├── Simualtor.py                # Abstract base class of the simulator
+│   ├── Simulator/                      # Contains all script regarding simulators and scenarios
+│   │   ├── Simulator.py                # Abstract base class of the simulator
 │   │   ├── Scenario.py                 # Data-Classes for Scenarios and Scenario Outcomes
 │   │   └── image_callback.py           # Provides functionality to view images in a second monitor
 │   │
@@ -78,9 +78,9 @@ perturbationdrive/
 │   ├── perturbationdrive.py            # Benchmarking Controller
 │   └── perturbationsfuncs.py           # Collection of image perturbations
 │
-├── examples /                          # Provides examples on simualtor integrations
+├── examples /                          # Provides examples on simulator integrations
 │   ├── test_dir/                       # Empty folder. Use this folder for own scripts and experimenting with this project. All files within this folder will be untracked.
-│   ├── models/                         # Example implenetation of the ADS class
+│   ├── models/                         # Example implementation of the ADS class
 │   │   ├── README.md                   # Documentation and Explanation on the example
 │   │   └── example_agent.py            # Example subclass of the ADS
 │   │
@@ -88,12 +88,12 @@ perturbationdrive/
 │   │   └── README.md                   # Documentation and Explanation on the example
 │   │
 │   ├── self_driving_sandbox_donkey/        # Example integration of Self Driving Sandbox Donkey Sim
-│   │   ├── README.md                   # Documentation and Explanation on the SDSandbox Simualtor
+│   │   ├── README.md                   # Documentation and Explanation on the SDSandbox Simulator
 │   │   ├── sdsandbox_simulator.py      # Simulator class implementation for the SDSandbox Donkey Sim 
 │   │   └── main.py                     # Entry point to run the example
 │   │
 │   └── udacity/                        # Example integration of Udacity Sim
-│       ├── README.md                   # Documentation and Explanation on the Udacity Simualtor
+│       ├── README.md                   # Documentation and Explanation on the Udacity Simulator
 │       ├── udacity_simulator.py        # Simulator class implementation for the Udacity Simulator
 │       └── main.py                     # Entry point to run the example
 │
@@ -138,7 +138,7 @@ ads = ExampleADS()
 benchmarking_object = PerturbationDrive(simulator=simulator, ads=ads)
 
 # perform grid search as end to end test
-benchmarking_object.grid_seach()
+benchmarking_object.grid_search()
 
 # simulate scenarios as end to end test
 benchmarking_obj.simulate_scenarios(scenarios=getDemoScenarios())
@@ -170,7 +170,7 @@ class PerturbationSimulator(ABC):
         # connects the class to the simulator binary
 
     @abstractmethod
-    def simulate_scanario(
+    def simulate_scenario(
         self, agent: ADS, scenario: Scenario, perturbation_controller: ImagePerturbation
     ) -> ScenarioOutcome:
         # simulates a scenario
@@ -186,9 +186,9 @@ Read the README in the `perturbationdrive/simulator/` directory for more documen
 ### Installing simulators
 Both the source and compiled binaries are available at: https://drive.google.com/drive/folders/1_8v3NfX3j_holplmxNRuszirhGfUzVv4?usp=sharing
 
-Currently we probide pre-compiled binaries for Mac (ARM/M silicon) and Linux(x86). To buld the simulator for other platforms, please use Unity 2019.3.0f1 for Udacity and Unity 2022.3.10f1 for Donkeycar.
+Currently we provide pre-compiled binaries for Mac (ARM/M silicon) and Linux(x86). To build the simulator for other platforms, please use Unity 2019.3.0f1 for Udacity and Unity 2022.3.10f1 for Donkeycar.
 
-Once the binaries are downloaded or bult, they have to be saved in their respective adapter folders.
+Once the binaries are downloaded or built, they have to be saved in their respective adapter folders.
 ./examples/[udacity,self_driving_sandbox_donkey]/sim/[sim_name].[os-defined executable]
 
 
@@ -198,7 +198,7 @@ A minimal example code to execute tests on SDSandbox is provided in `test_sim_do
 
 ### Minimal Udacity Example
 
-A minimal example code to execute tests on SDSandbox is provided in `test_sim_udacity.py`
+A minimal example code to execute tests on Udacity is provided in `test_sim_udacity.py`
 
 ## Installing locally
 
@@ -232,7 +232,7 @@ Create a new virtual environment using Python >= 3.9 (although Python 3.9 is the
     micromamba create -n myenv python=3.9
     ```
     
-    2b. Create a new environmnet
+    2b. Create a new environment
         
    ```Shell
    python3.9 -m venv myenv
@@ -268,7 +268,7 @@ Create a new virtual environment using Python >= 3.9 (although Python 3.9 is the
     pip install .
     ```
 
-    After local installation, the library can imported via `import perturbationdrive` within any Python script.
+    After local installation, the library can be imported via `import perturbationdrive` within any Python script.
 
 6. Deactivate the environment after use
 
@@ -285,7 +285,7 @@ Create a new virtual environment using Python >= 3.9 (although Python 3.9 is the
 
 ### Troubleshooting
 
-Depending on your setup you might to need to exclude some libraries (i.e. `tensorflow-metal`)
+Depending on your setup you might need to exclude some libraries (i.e. `tensorflow-metal`)
 
 ## Results & Citation
 
