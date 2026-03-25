@@ -7,6 +7,9 @@ This ReadMe provides documentation over all functionalities in the perturbation 
 - [Image Perturbations](#image-perturbations)
   - [ImagePerturbation Controller](#imageperturbation-controller)
   - [Example](#image-perturbation-example)
+- [LiDAR Perturbations](#lidar-perturbations)
+  - [LidarPerturbation Controller](#lidarperturbation-controller)
+  - [Example](#lidar-perturbation-example)
 - [Simulator](#simulator)
   - [PerturbationSimulator](#perturbationsimulator)
   - [Scenario](#scenario)
@@ -83,10 +86,10 @@ When the class is initialized, all models for generative perturbations (such as 
 This class has the following parameters:
 
 - `funcs` (`List[str]`, default: `[]`): List of the function names we want to use as perturbations. If this list is empty, all perturbations from the table above are used.
-- `attention_map` (`dict(map: str, model: tf.model, threshold: float, layer: str)`, default: `{}`): States if we perturbated the input based on the attention map and which attention map to use. Possible arguments for map are `grad_cam` or `vanilla`. If you want to perturb based on the attention map you will need to speciy the model, attention threshold as well as the map type here. You can use either the vanilla saliency map or the Grad Cam attention map. If this dict is empty we do not perturb based on the saliency regions. The treshold can be empty and is 0.5 per default. The default layer for the GradCam Map is `conv2d_5`.
+- `attention_map` (`dict(map: str, model: tf.model, threshold: float, layer: str)`, default: `{}`): States if we perturbated the input based on the attention map and which attention map to use. Possible arguments for map are `grad_cam` or `vanilla`. If you want to perturb based on the attention map you will need to specify the model, attention threshold as well as the map type here. You can use either the vanilla saliency map or the Grad Cam attention map. If this dict is empty we do not perturb based on the saliency regions. The threshold can be empty and is 0.5 per default. The default layer for the GradCam Map is `conv2d_5`.
 - `image_size` (`Tuple[float, float]`: default: `(240, 320)`). Input image size for all perturbations.
 
-By creating a subclass, one can extend the perturbations used in this library. Note, that the minimum requirement for the subclass are implenting the `perturbation` function.
+By creating a subclass, one can extend the perturbations used in this library. Note, that the minimum requirement for the subclass are implementing the `perturbation` function.
 
 The table below details all function names of the generative and dynamic perturbations
 
@@ -110,7 +113,7 @@ The table below details all function names of the generative and dynamic perturb
 Perturbs the input image based on the function name given. This class has the following parameters:
 
 - `image` (`ndarray[Any, dtype[dtype=uint8]]`): Input image
-- `perturbation_name` (`str`): Name of the perturbation to apply. If the string is empty, no perturbation will be appliesd. All possible perturbation names are detailed in the perturbation tables of this seection.
+- `perturbation_name` (`str`): Name of the perturbation to apply. If the string is empty, no perturbation will be applied. All possible perturbation names are detailed in the perturbation tables of this section.
 - `intensity`: (`int`). Perturbation intensity on a range from 0 to 4.
 
 Returns:
@@ -155,6 +158,112 @@ _ = controller1.perturbation("gaussian_noise", 2)
 __ = controller1.perturbation("poisson_noise", 5)
 ```
 
+## LiDAR Perturbations
+
+The file `perturbationfuncs.py` implements all 3D point cloud perturbations used in this work. To interact seamlessly with standard autonomous driving pipelines and ROS wrappers, the methods expect the point cloud as a 2D NumPy array of shape `(N, 4)` or `(N, 5)`, where `N` is the number of points and the columns represent `[x, y, z, intensity, (optional: ring)]`.
+
+Similar to images, each perturbation requires an input point cloud and an intensity scale (range 0-2 or 0-4). The table below details the available 3D LiDAR corruptions.
+
+| Category | Function Name | Description |
+| :--- | :--- | :--- |
+| **(A) Weather & Environment** | `simulate_snow`, `simulate_snow_sweep`, `snow_sim`, `fast_snow` | Introduces false returns and scatter points simulating snowflakes. |
+| | `rain_sim`, `fast_rain` | Simulates attenuation and reflection of laser beams by water droplets. |
+| | `simulate_fog`, `fog_sim`, `fast_fog` | Reduces detection range and adds clutter due to beam scattering in aerosols. |
+| | `scene_glare_noise` | Adds background noise points due to solar interference and glare (Strong sunlight). |
+| **(B) Sensor & FOV Artifacts** | `density_dec_global`, `pointsreducing` | Simulates a uniform drop in overall point cloud density. |
+| | `reduce_LiDAR_beamsV2` | Removes entire scan lines (rings) to mimic hardware failure of laser diodes. |
+| | `cutout_local` | Drops a contiguous spatial region representing severe environmental occlusion. |
+| | `lidar_crosstalk_noise`, `lidar_inject_ghost_points` | Introduces phantom/ghost points caused by infrared interference or false reflections. |
+| | `fov_filter` | Restricts the angular field of view, simulating physical blockage or lens dirt. |
+| **(C) Global Noise** | `gaussian_noise_lidar` | Adds random Gaussian jitter to the XYZ coordinates of the entire point cloud. |
+| | `uniform_noise` | Displaces points randomly but equally within a fixed, continuous spatial boundary. |
+| | `impulse_noise_lidar` | Introduces severe, sparse outliers (salt-and-pepper noise) in 3D space. |
+| **(D) Local Corruptions** | `density_dec_bbox` | Simulates partial occlusion by dropping points from specific objects. |
+| | `cutout_bbox` | Simulates complete occlusion by dropping an entire bounding box. |
+| | `gaussian_noise_bbox` | Applies localized Gaussian coordinate noise to specific objects. |
+| | `uniform_noise_bbox` | Applies localized uniform noise to specific objects. |
+| | `impulse_noise_bbox` | Applies localized impulse noise to specific objects. |
+| **(E) Affine Transforms** | `shear_bbox` | Displaces point coordinates linearly to distort the object's natural geometry. |
+| | `scale_bbox` | Uniformly enlarges or shrinks the 3D dimensions of an object. |
+| | `rotation_bbox` | Alters the orientation of an object around its axes. |
+| **(F) Motion & Alignment** | `pts_motion` | Introduces directional motion blur and smearing to points along a trajectory. |
+| | `moving_noise_bbox` | Applies trajectory and positional noise specifically to dynamic actors. |
+| | `spatial_alignment_noise`, `transform_points` | Applies rigid geometric transformations simulating poor calibration or physical sensor drift. |
+
+### LidarPerturbation Controller
+
+The class `LidarPerturbation` provides the main interface for performing operations on point clouds. It acts as the centralized controller, handling both global point cloud alterations and targeted, object-level corruptions.
+
+#### LidarPerturbation.Class
+
+This class takes a list of requested perturbations upon initialization. 
+
+- `funcs` (`List[str]`, default: `[]`): List of the function names you wish to use as perturbations. If this list is empty, all valid LiDAR perturbations are initialized.
+
+#### LidarPerturbation.perturbation
+
+Perturbs the input point cloud based on the function name given.
+
+- **Parameters:**
+  - `point_cloud` (`np.ndarray`): Input point cloud array of shape `(N, 4)` or `(N, 5)`.
+  - `perturbation_name` (`str`): Name of the perturbation to apply (e.g., `"gaussian_noise_lidar"`).
+  - `intensity`: (`int`). Perturbation severity on a scale from 0 to 4.
+  - `**kwargs`: Context-specific arguments required by certain corruptions:
+    - `bbox` (`np.ndarray`): Required for `*_bbox` perturbations. Contains bounding boxes in format `[x, y, z, l, w, h, yaw]`.
+    - `label` (`np.ndarray`): Required for high-fidelity physics simulations like `simulate_snow` to distinguish between drivable surfaces (ground) and obstacles.
+    - `beam_divergence` (`float`): Laser specific parameters for weather simulations.
+
+- **Returns:**
+  - `np.ndarray`: The perturbed point cloud with the same column structure as the input.
+
+### LiDAR Perturbation Example
+
+```python
+import numpy as np
+from perturbationdrive import LidarPerturbation
+
+# Generate a mock point cloud: [x, y, z, intensity, ring]
+num_points = 1000
+mock_pc = np.random.rand(num_points, 5).astype(np.float32)
+mock_pc[:, 3] *= 255.0  # mock intensities
+mock_pc[:, 4] = np.random.randint(0, 64, num_points)  # mock 64-channel rings
+
+# 1. Initialize Controller with desired corruptions
+controller = LidarPerturbation(funcs=["gaussian_noise_lidar", "fast_snow", "cutout_bbox"])
+
+# 2. Apply a global perturbation (Gaussian Noise, Intensity 2)
+noisy_pc = controller.perturbation(
+    point_cloud=mock_pc, 
+    perturbation_name="gaussian_noise_lidar", 
+    intensity=2
+)
+
+# 3. Apply a local perturbation (Cutout an object)
+# Bounding box format: [x, y, z, length, width, height, yaw]
+mock_bbox = np.array([[5.0, 0.0, -1.0, 4.0, 2.0, 2.0, 0.0]])
+
+missing_car_pc = controller.perturbation(
+    point_cloud=mock_pc,
+    perturbation_name="cutout_bbox",
+    intensity=4,
+    bbox=mock_bbox
+)
+
+# 4. Apply high-fidelity physics (requires semantic labels for ground vs non-ground)
+# Let's say the first 500 points are ground (ID 24)
+labels = np.zeros(num_points, dtype=np.int32)
+labels[:500] = 24 
+
+controller_advanced = LidarPerturbation(funcs=["simulate_snow"])
+snowy_pc = controller_advanced.perturbation(
+    point_cloud=mock_pc,
+    perturbation_name="simulate_snow",
+    intensity=3,
+    label=labels,
+    beam_divergence=0.17
+)
+```
+
 ## Simulator
 
 The directory `Simulator/` provides all interfaces for running end to end tests in simulators, specifying scenarios and receiving the output of the simulated scenario.
@@ -166,7 +275,7 @@ For examples on creating subclasses of the `PerturbationSimulator` see the examp
 
 #### PerturbationSimulator.Class
 
-Initilizer for the PerturbationSimulator object. The following
+Initializer for the PerturbationSimulator object. The following
 
 - `max_xte: float` (default = 2.0):
     Maximum cross-track error allowed.
@@ -187,10 +296,10 @@ Abstract method to connect the simulator instance to the simulator binary. If ne
 
 Simulates a single scenario and returns a scenario outcome. Has the following parameters
 
-- `agend: ADS`
+- `agent: ADS`
     The agent which is tested in this scenario. See [ADS](#ads) for the ADS definition.
 - `scenario: Scenario`
-    The scenario which should be evaluated on the agent. Before the agent performs any actions in the simulator, this scenario should be build in the simulator. See [Scenario](#scenario) for the scenario definition.
+    The scenario which should be evaluated on the agent. Before the agent performs any actions in the simulator, this scenario should be built in the simulator. See [Scenario](#scenario) for the scenario definition.
 - `perturbation_controller: ImagePerturbation`
     The perturbation controller which is used to perturb the input of the ADS. See [ImagePerturbation](#imageperturbation-controller) for more details.
 
@@ -207,7 +316,7 @@ Tears down the connection to the simulator. If a binary was launched in `connect
 The `Scenario` data class is designed to model a scenario in the context of automated driving system (ADS) simulations. It is made up of the waypoints defining the road of the scenario, perturbation function, and perturbation scale. The class has the following parameters:
 
 - `waypoints: Union[str, None]`
-    The waypoints define the road of the scenario. All wypoints are made up of (x, y, z)-coordinates seperated by `@`, e.g. `1.0,1.0,1.0@2.0,2.0,2.0@3.0,3.0,2.0`. If the waypoints are None, the default track of the scenario is used.
+    The waypoints define the road of the scenario. All waypoints are made up of (x, y, z)-coordinates separated by `@`, e.g. `1.0,1.0,1.0@2.0,2.0,2.0@3.0,3.0,2.0`. If the waypoints are None, the default track of the scenario is used.
 - `perturbation_function: str`
     Defines the perturbation of the scenario. Possible perturbation names are all detailed in the tables of section [Image Perturbations](#image-perturbations).
 - `perturbation_scale: int`
@@ -224,7 +333,7 @@ The `ScenarioOutcome` data class defines the result of running a scenario in a s
 - `xte: List[float]`
     The Cross Track Error of the vehicle at every frame of the simulation. Used as performance measure.
 - `speeds: List[float]`
-    The speed of the vehicle at every framne of the simulation.
+    The speed of the vehicle at every frame of the simulation.
 - `actions: List[List[float]]`
     The actions take by the `ADS` at every frame of the simulation. The first value of the list is the steering angle and the second value is the throttle.
 - `scenario: Union[Scenario, None]`
@@ -258,7 +367,7 @@ res = ScenarioOutcome(
 
 ### OfflineScenarioOutcome
 
-The `OfflineScenarioOutcome` data class defines the result of running a based test on an image. Here we test the model under test on a image which is perturbed to evaluate the difference in driving commands on the perturbed image, the image which has not been perturbed and the grund truth driving actions. This class has the following parameters.
+The `OfflineScenarioOutcome` data class defines the result of running a based test on an image. Here we test the model under test on a image which is perturbed to evaluate the difference in driving commands on the perturbed image, the image which has not been perturbed and the ground truth driving actions. This class has the following parameters.
 
 - `image_file_name: str`
     Path to the image used for testing
@@ -277,7 +386,7 @@ The `OfflineScenarioOutcome` data class defines the result of running a based te
 
 ### ImageCallBack
 
-The `ImageCallBack` class provides functionality to view images and text messages on a `pygame` window. This project uses this functionality to display the pertubed image and the actions of the `ADS` during the simulation.
+The `ImageCallBack` class provides functionality to view images and text messages on a `pygame` window. This project uses this functionality to display the perturbed image and the actions of the `ADS` during the simulation.
 
 #### ImageCallBack.Class
 
@@ -286,7 +395,7 @@ The `ImageCallBack` class takes the following parameters at initialization.
 - `channels: int` (default: 3)
     Amount of color channels on the images displayed.
 - `rows: int` (default: 240)
-    Height of the images diaplyed in pixels.
+    Height of the images displayed in pixels.
 - `cols: int` (default: 320)
     Width of the images displayed in pixels.
 
@@ -372,7 +481,7 @@ Abstract method of the `RoadGenerator` interface. This method returns a road str
 
 Returns:
 
-- `str` Returns the string representation of the generated track. The track is defined by its waypoints in (x, y, z)-coordinates and each waypoint is seperated by `@`, e.g. `1.0,1.0,1.0@2.0,2.0,2.0@3.0,3.0,2.0`.
+- `str` Returns the string representation of the generated track. The track is defined by its waypoints in (x, y, z)-coordinates and each waypoint is separated by `@`, e.g. `1.0,1.0,1.0@2.0,2.0,2.0@3.0,3.0,2.0`.
 
 ### RandomRoadGenerator
 
@@ -387,7 +496,7 @@ The class takes the following parameters to configure randomly generated roads:
 - `max_angle: int` (default=90)
     Maximum angle between two different control nodes. Needs to be in range of [0, 360].
 - `seg_length: int` (default=25)
-    Length between two adjecent control nodes. Needs to be greater than 0.
+    Length between two adjacent control nodes. Needs to be greater than 0.
 - `num_spline_nodes: int` (default=20)
     Amount of splines points generated by the Catmull-Rom Spline between the adjacent control nodes. Needs to be greater than 0.
 - `initial_node: Tuple[float, float, float, float]` (default=(.0,.0,.0,.0))
@@ -402,7 +511,7 @@ Generates a random road given a starting position and outputs the string of the 
 
 Returns:
 
-- `str` Returns the string representation of the generated track. The track is defined by its waypoints in (x, y, z)-coordinates and each waypoint is seperated by `@`, e.g. `1.0,1.0,1.0@2.0,2.0,2.0@3.0,3.0,2.0`.
+- `str` Returns the string representation of the generated track. The track is defined by its waypoints in (x, y, z)-coordinates and each waypoint is separated by `@`, e.g. `1.0,1.0,1.0@2.0,2.0,2.0@3.0,3.0,2.0`.
 
 #### RandomRoadGenerator Example
 
@@ -433,7 +542,7 @@ The class takes the following parameters:
 - `max_angle: int` (default=90)
     Maximum angle between two different control nodes. Needs to be in range of [0, 360].
 - `seg_length: int` (default=25)
-    Length between two adjecent control nodes. Needs to be greater than 0.
+    Length between two adjacent control nodes. Needs to be greater than 0.
 - `num_spline_nodes: int` (default=20)
     Amount of splines points generated by the Catmull-Rom Spline between the adjacent control nodes. Needs to be greater than 0.
 - `initial_node: Tuple[float, float, float, float]` (default=(.0,.0,.0,.0))
@@ -468,8 +577,8 @@ generator = CustomRoadGenerator(
 )
 
 generator.generate(
-    starting_pos=(1.0, 2.0, 0.0)
-    angles=[10, 10, 0, 0, -10, -10, -15, 0, 15, 0]
+    starting_pos=(1.0, 2.0, 0.0),
+    angles=[10, 10, 0, 0, -10, -10, -15, 0, 15, 0],
     seg_lengths=[10, 10, 4, 3, 10, 10, 10, 15, 20, 10]
 )
 ```
@@ -499,7 +608,7 @@ Parameters:
 - `attention_map: dict(map: str, model: tf.model, threshold: float, layer: str) = {}`
     Determines if the input image is perturbed on the attention map of the SUT or not. If the dict is empty, the input image is not perturbed based on the attention map. The parameters are identical to the [ImagePerturbation class](#imageperturbationclass).
 - `road_generator: Union[RoadGenerator, None] = None`
-    The generator which generates the road for the grid search. If no road generator is suplied, the default road of the simulator is choosen.
+    The generator which generates the road for the grid search. If no road generator is supplied, the default road of the simulator is chosen.
 - `log_dir: Union[str, None] = "logs.json"`
     Optional directory to log the `ScenarioOutcome`s of each individual `Scenario`. If this param is None, the results are not written to a log file and returned from this method. If this is not None, the logs are written to the file and the `ScenarioOutcome` is not returned from this method.
 - `overwrite_logs: bool = True`
@@ -521,7 +630,7 @@ simulator = ExampleSimulator()
 ads = ExampleADS()
 
 # perform grid search as end to end test
-benchmarking_object.grid_seach(
+benchmarking_object.grid_search(
     perturbation_functions=["gaussian_noise", "impulse_noise"],
     attention_map={},
     road_generator=RandomRoadGenerator(),
@@ -544,7 +653,7 @@ The grid search method implemets the following control flow
 
 ### PerturbationDrive.simulate_scenarios
 
-Simulates a list of scenarios on the simualtor using the SUT to generate actions during the scenario.
+Simulates a list of scenarios on the simulator using the SUT to generate actions during the scenario.
 
 Parameters:
 
@@ -651,7 +760,7 @@ JSON Files
 - Format: `record_{frame_number}.json`
 - Components:
   - record_: A fixed prefix for all JSON files in the dataset.
-  - {frame_number}: The same frame number as used in the corresponding image file. This ensures that each JSON file is correctly associated  ith its respective image.
+  - {frame_number}: The same frame number as used in the corresponding image file. This ensures that each JSON file is correctly associated with its respective image.
   - .json: The file extension for JSON files.
 - JSON File Content
   - Each JSON file must contain the following ground truth values:
@@ -666,7 +775,7 @@ This section provides documentation on the util scripts which can be used as par
 
 The GlobalLog class is a utility designed for centralized logging across different modules in the PerturbationDrive project. It provides a standardized way to log messages, making it easier to track and debug the system's operations.
 
-#### GloabalLog.class
+#### GlobalLog.class
 
 Takes the following parameters:
 
@@ -676,7 +785,7 @@ Takes the following parameters:
 Checks if a logger with the given prefix already exists. If not, it creates a new logger and sets it up with a specific logging level and format.
 The logger is configured to output log messages to the standard output (stdout) using a StreamHandler. The format for log messages is set to display the log level, logger name, and the log message.
 
-#### GloabalLog Functions
+#### GlobalLog Functions
 
 - `debug(self, message)`
     Logs a debug message. Useful for detailed information, typically of interest only when diagnosing problems.
