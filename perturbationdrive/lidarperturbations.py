@@ -12,8 +12,8 @@ from .perturbationfuncs import (
     transform_points,
     reduce_LiDAR_beamsV2,
     pointsreducing,
-    simulate_snow_sweep, # ransac for ground truth
-    simulate_snow, # needs ground truth labels
+    simulate_snow_sweep, # ransac for ground segmentation
+    simulate_snow, # needs ground labels
     simulate_fog,
     rain_sim,
     snow_sim,
