@@ -283,6 +283,15 @@ Create a new virtual environment using Python >= 3.9 (although Python 3.9 is the
    deactivate
    ```
 
+7. Download Snowflakes 
+We use [MultiCorrupt](https://github.com/ika-rwth-aachen/MultiCorrupt) to simulate snow which uses[LiDAR_snow_sim](https://github.com/SysCV/LiDAR_snow_sim) in LiDAR point clouds. To make these simulations run we need to download the precomputed files first: 
+
+``bash
+cd perturbationdrive/utils
+wget https://avi.ethz.ch/publications/2022/lidar_snow_simulation/snowflakes.zip
+unzip snowflakes.zip
+rm snowflakes.zip
+```
 ### Troubleshooting
 
 Depending on your setup you might need to exclude some libraries (i.e. `tensorflow-metal`)
